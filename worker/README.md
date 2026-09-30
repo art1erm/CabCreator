@@ -11,7 +11,20 @@
 
 ## 2. Разверните посредника
 
-Нужен бесплатный аккаунт Cloudflare и Node.js.
+### Вариант А — через сайт Cloudflare, без программ
+
+1. Войдите на dash.cloudflare.com → слева **Workers & Pages** → **Create** → **Create Worker** (шаблон Hello World).
+2. Задайте имя, например `cabcreator-feedback`, и нажмите **Deploy**. Появится адрес вида `https://cabcreator-feedback.<имя>.workers.dev`.
+3. Нажмите **Edit code**, удалите весь код в редакторе и вставьте содержимое файла `worker/feedback-worker.js`. Нажмите **Deploy**.
+4. Вернитесь к воркеру → **Settings** → **Variables and Secrets** → **Add**:
+   - Type **Secret**, Variable name `BOT_TOKEN`, Value — токен бота;
+   - **Add variable** → Type **Secret**, Variable name `CHAT_ID`, Value — id чата.
+   Нажмите **Deploy**.
+5. Проверка: откройте адрес воркера в браузере — должно показать `{"ok":false,"error":"method"}`. Это нормально: воркер жив и ждёт сообщений от приложения.
+
+### Вариант Б — из командной строки
+
+Нужен Node.js.
 
 ```bash
 cd worker
