@@ -68,6 +68,10 @@ button.link{border:none;background:none;padding:2px 4px;color:var(--accent);font
 .gaps-grid input,.sec input.auto{min-width:0}
 .gaps-grid input{font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 6px;width:100%}
 .sec input:not(.auto)[data-k="gap"]{border-color:var(--accent)}
+.doors{grid-column:1/-1;display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--line);padding-top:8px}
+.drow{display:grid;grid-template-columns:1fr 1fr 72px 24px;gap:6px;align-items:end}
+.dl{display:flex;flex-direction:column;gap:2px;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
+.dl select{font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 4px;width:100%;min-width:0;text-transform:none;letter-spacing:0}
 .f-note{grid-column:1/-1;font-size:11.5px;color:var(--muted);margin-top:-4px}
 main{display:flex;flex-direction:column;gap:18px;min-width:0}
 .board{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
@@ -223,7 +227,7 @@ input[type=file]{display:none}
 const KEY="cabcreator.v1";
 const DEF={name:"Шкаф в прихожую",W:1800,H:2400,D:600,plinth:80,t:16,back:3,edgeFront:2,edgeDoor:2,
   shelfInset:20,doorGap:3,subtractEdge:true,showDoors:false,sideMode:"cut",sheetL:2800,sheetW:2070,kerf:4,trim:10,grain:true,
-  sections:[{w:"",kind:"hanger",shelves:0,doors:2},{w:"",kind:"shelves",shelves:5,doors:1},{w:"450",kind:"shelves",shelves:4,doors:1}]};
+  sections:[{w:"",kind:"hanger",shelves:0,doorList:[{from:0,to:"top",leaves:2}]},{w:"",kind:"shelves",shelves:5,doorList:[{from:0,to:"top",leaves:1}]},{w:"450",kind:"shelves",shelves:4,doorList:[{from:0,to:2,leaves:1}]}]};
 const KINDS={shelves:"Полки",hanger:"Штанга + антресоль",empty:"Пустая"};
 let S=clone(DEF), sel=0;
 try{const raw=localStorage.getItem(KEY); if(raw){const o=JSON.parse(raw); if(o&&Array.isArray(o.sections)&&o.sections.length) S=Object.assign(clone(DEF),o);}}catch(e){}
@@ -244,6 +248,15 @@ function normGaps(c,k){
   if(c.gaps.length>k+1) c.gaps.length=k+1;
   return c.gaps;
 }
+/* door groups per section; old projects stored only a leaf count */
+function normDoors(c,K){
+  if(!Array.isArray(c.doorList)) c.doorList=(+c.doors>0)?[{from:0,to:"top",leaves:+c.doors}]:[];
+  c.doorList.forEach(d=>{if(d.from!=="top") d.from=Math.max(0,Math.min(K,Math.round(num(d.from,0))));
+    if(d.to!=="top"){const v=Math.round(num(d.to,K+1));d.to=v>K?"top":Math.max(0,v);}});
+  return c.doorList;
+}
+const lvl=(v,K)=>v==="top"?K+1:Math.max(0,Math.min(K+1,Math.round(num(v,0))));
+const levelName=(v,K)=>{const x=lvl(v,K);return x===0?"низ":x===K+1?"верх":`полка ${x}`;};
 function layout(s){
   const t=+s.t, n=s.sections.length, warns=[];
   const inner=s.W-2*t-(n-1)*t;
@@ -283,11 +296,20 @@ function layout(s){
     }
     if(sc.w<120) warns.push(`Секция ${sc.i+1} уже 120 мм.`);
     if(sc.c.kind==="shelves"&&sc.w>900) warns.push(`Секция ${sc.i+1}: полка ${fmt(sc.w)} мм из ЛДСП ${t} мм будет провисать, лучше до 800 мм.`);
-    const kd=+sc.c.doors||0; sc.doors=[];
-    if(kd){const g=+s.doorGap, L=sc.x-(sc.i===0?t:t/2), R=sc.x+sc.w+(sc.i===n-1?t:t/2);
-      const dw=Math.floor(((R-L)-g*kd)/kd*2)/2, y0=g/2, dh=Math.floor((s.H-s.plinth-g)*2)/2;
+    // doors: each group covers levels from..to (0 = bottom panel, 1..K = shelves bottom-up, K+1 = top panel)
+    sc.doors=[];
+    const K=sc.shelves.length, g=+s.doorGap, xl=sc.x-(sc.i===0?t:t/2), xr=sc.x+sc.w+(sc.i===n-1?t:t/2), used=[];
+    normDoors(sc.c,K).forEach((dg,gi)=>{
+      let a=lvl(dg.from,K), b=lvl(dg.to,K); if(a>b) [a,b]=[b,a];
+      if(a===b){warns.push(`Секция ${sc.i+1}: у двери ${gi+1} одинаковые начало и конец.`);return;}
+      if(used.some(([u,v])=>a<v&&u<b)) warns.push(`Секция ${sc.i+1}: двери ${gi+1} перекрывают другую дверь.`);
+      used.push([a,b]);
+      const yb=a===0?yBot+t-g/2:sc.shelves[a-1]+t/2-g/2, yt=b===K+1?g/2:sc.shelves[b-1]+t/2+g/2;
+      const kd=+dg.leaves===2?2:1, dw=Math.floor(((xr-xl)-g*kd)/kd*2)/2, dh=Math.floor((yb-yt)*2)/2;
+      if(dh<100){warns.push(`Секция ${sc.i+1}: дверь ${gi+1} ниже 100 мм.`);return;}
       for(let j=0;j<kd;j++){const hinge=kd===2?(j===0?"L":"R"):(sc.i<(n-1)/2?"L":(sc.i>(n-1)/2?"R":"L"));
-        sc.doors.push({x:L+g/2+j*(dw+g),y:y0,w:dw,h:dh,hinge});}}
+        sc.doors.push({x:xl+g/2+j*(dw+g),y:yt,w:dw,h:dh,hinge,group:gi,from:a,to:b});}
+    });
   });
   if(s.H>s.sheetL-2*s.trim) warns.push(`Высота ${s.H} мм больше рабочей длины листа ${s.sheetL-2*s.trim} мм — боковины не выкроить из одного листа.`);
   if(hin<200) warns.push("Слишком маленькая внутренняя высота.");
@@ -464,7 +486,8 @@ function sideSVG(s,L,si,P,o){
   const cut=o.mode!=="view";
   const sc=L.secs[Math.max(0,Math.min(si,L.secs.length-1))];
   const H=s.H,D=s.D,t=L.t,bk=+s.back||0,dc=D-bk,fs=Math.max(s.W,H)*.022,m=fs*4.2;
-  const door=cut?sc.doors[0]:(L.secs.find(x=>x.doors.length)||{doors:[]}).doors[0];
+  const dsrc=cut?sc:(L.secs[0].doors.length?L.secs[0]:(L.secs.find(x=>x.doors.length)||{doors:[]}));
+  const sdoors=dsrc.doors.filter((d,k,a)=>a.findIndex(e=>e.group===d.group)===k), door=sdoors[0];
   const xF=D+(door?t:0);
   const vb=[-m*.45,-m*1.05,xF+m*1.25,H+m*2.1];
   const pid=`cut${sc.i}${o.pfx||""}`, sw=fs*.07;
@@ -483,7 +506,7 @@ function sideSVG(s,L,si,P,o){
     if(s.plinth>0) g+=C(D-t,H-s.plinth,t,s.plinth);
     sc.shelves.forEach(y=>g+=C(bk,y,sd,t));
     if(sc.rod) g+=`<circle cx="${bk+dc/2}" cy="${sc.rod}" r="12.5" fill="${P.bg}" stroke="${P.ink}" stroke-width="${sw*2}"/>`;
-    if(door) g+=C(D+1,door.y,t,door.h);
+    sdoors.forEach(dd=>g+=C(D+1,dd.y,t,dd.h));
     if(sc.shelves.length){
       d+=dimH(bk,bk+sd,H+m*.55,H,fmt(sd),P,fs,"полка");
       if(+s.shelfInset>0) d+=`<text x="${(bk+sd+D)/2}" y="${H+m*.55+fs*1.25}" text-anchor="middle" font-size="${fs*.7}" font-family="${P.mono}" fill="${P.muted}">+${fmt(+s.shelfInset)}</text>`;
@@ -494,7 +517,7 @@ function sideSVG(s,L,si,P,o){
     g+=V(bk,0,dc,H)+back;
     g+=hid(bk,t,D,t)+hid(bk,L.yBot,D,L.yBot)+hid(bk,L.yBot+t,D,L.yBot+t);
     if(s.plinth>0) g+=hid(D-t,H-s.plinth,D-t,H);
-    if(door) g+=V(D+1,door.y,t,door.h);
+    sdoors.forEach(dd=>g+=V(D+1,dd.y,t,dd.h));
     d+=dimV(0,H,xc,xF+fs*.3,fmt(H),P,fs*.85);
     if(bk) d+=dimH(0,bk,H+m*.55,H,"",P,fs,`ХДФ ${fmt(bk)}`)+dimH(bk,D,H+m*.55,H,fmt(dc),P,fs,"боковина");
   }
@@ -608,6 +631,18 @@ function gapInputs(c,i){
     return `<label class="f">Антресоль, мм<input id="sg${i}_1" type="number" min="150" step="1" value="${esc(c.gaps[1])}" data-k="gap" data-j="1"></label><span class="f-note">Штанга на 60 мм ниже полки антресоли</span>`;}
   return "";
 }
+const secLevels=c=>c.kind==="shelves"?Math.max(0,Math.min(20,Math.round(num(c.shelves,0)))):c.kind==="hanger"?1:0;
+function doorInputs(c,i){
+  const K=secLevels(c), list=normDoors(c,K);
+  const opts=(v,skip)=>{let o="";for(let x=0;x<=K+1;x++){if(x===skip) continue;const val=x===K+1?"top":String(x);o+=`<option value="${val}"${lvl(v,K)===x?" selected":""}>${levelName(val,K)}</option>`;}return o;};
+  return `<div class="doors"><div class="gaps-head"><span>Двери</span><span><button type="button" class="link" data-fulldoor="${i}">Закрыть всю</button> <button type="button" class="link" data-adddoor="${i}">+ Дверь</button></span></div>
+  ${list.length?list.map((d,gi)=>`<div class="drow" data-g="${gi}">
+    <label class="dl"><span>от</span><select id="df${i}_${gi}" data-dk="from">${opts(d.from,K+1)}</select></label>
+    <label class="dl"><span>до</span><select id="dt${i}_${gi}" data-dk="to">${opts(d.to,0)}</select></label>
+    <label class="dl"><span>створки</span><select id="dv${i}_${gi}" data-dk="leaves"><option value="1"${+d.leaves!==2?" selected":""}>1</option><option value="2"${+d.leaves===2?" selected":""}>2</option></select></label>
+    <button type="button" class="x" data-deldoor="${gi}" aria-label="Удалить дверь ${gi+1}">×</button></div>`).join(""):`<span class="f-note" style="margin:0">Секция открытая, без дверей</span>`}
+  </div>`;
+}
 function renderSecs(){
   $("secs").innerHTML=S.sections.map((c,i)=>`
   <div class="sec${i===sel?" sel":""}" data-i="${i}">
@@ -615,15 +650,15 @@ function renderSecs(){
     <label class="f">Ширина, мм<input id="sw${i}" type="number" min="100" placeholder="авто" value="${esc(c.w)}" data-k="w"></label>
     <label class="f">Наполнение<select id="sk${i}" data-k="kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}"${c.kind===k?" selected":""}>${v}</option>`).join("")}</select></label>
     <label class="f">Полок<input id="sn${i}" type="number" min="0" max="20" value="${c.shelves}" data-k="shelves"${c.kind!=="shelves"?" disabled":""}></label>
-    <label class="f">Двери<select id="sd${i}" data-k="doors">${[0,1,2].map(n=>`<option value="${n}"${+c.doors===n?" selected":""}>${n===0?"нет":n}</option>`).join("")}</select></label>
     ${gapInputs(c,i)}
+    ${doorInputs(c,i)}
   </div>`).join("");
   if(L) updateSecMeta();
 }
 function updateSecMeta(){
   L.secs.forEach(sc=>{const el=document.querySelector(`[data-meta="${sc.i}"]`);if(el) el.textContent=`${fmt(sc.w)} мм`;
     const inp=$("sw"+sc.i); if(inp) inp.placeholder=`авто · ${fmt(sc.w)}`;
-    sc.gaps.forEach((v,j)=>{const gi=$(`sg${sc.i}_${j}`);if(!gi) return;gi.placeholder=`авто ${fmt(v)}`;
+    sc.gaps.forEach((v,j)=>{const gi=$(`sg${sc.i}_${j}`);if(!gi) return;gi.placeholder=fmt(v);gi.title=`Авто: ${fmt(v)} мм. Введите число, чтобы задать просвет`;
       const want=sc.c.gaps&&sc.c.gaps[j]!==undefined?String(sc.c.gaps[j]):"";
       if(document.activeElement!==gi&&gi.value!==want) gi.value=want;
       gi.classList.toggle("auto",!!sc.gapAuto[j]);});});
@@ -636,7 +671,10 @@ function selectSec(i,scroll){
 }
 function rerenderSecs(focusId){renderSecs();const f=focusId&&$(focusId);if(f){f.focus();}}
 $("secs").addEventListener("input",e=>{
-  const card=e.target.closest(".sec"),k=e.target.dataset.k; if(!card||!k) return;
+  const card=e.target.closest(".sec"); if(!card) return;
+  const dk=e.target.dataset.dk;
+  if(dk){const c=S.sections[+card.dataset.i], gi=+e.target.closest(".drow").dataset.g;c.doorList[gi][dk]=dk==="leaves"?+e.target.value:(e.target.value==="top"?"top":+e.target.value);schedule();return;}
+  const k=e.target.dataset.k; if(!k) return;
   const i=+card.dataset.i, c=S.sections[i];
   if(k==="w") c.w=e.target.value;
   else if(k==="kind"){c.kind=e.target.value;c.gaps=[];if(c.kind==="shelves"&&!c.shelves) c.shelves=3;compute();rerenderSecs(e.target.id);}
@@ -649,12 +687,23 @@ $("secs").addEventListener("change",e=>{if(e.target.dataset.k==="shelves"){compu
 $("secs").addEventListener("click",e=>{
   const del=e.target.closest("[data-del]");
   if(del){S.sections.splice(+del.dataset.del,1);sel=Math.min(sel,S.sections.length-1);renderSecs();render();return;}
+  const ad=e.target.closest("[data-adddoor]"), fd=e.target.closest("[data-fulldoor]"), dd=e.target.closest("[data-deldoor]");
+  if(ad||fd||dd){
+    const i=+(ad||fd||dd).closest(".sec").dataset.i, c=S.sections[i], K=secLevels(c), list=normDoors(c,K), w=(L.secs[i]||{}).w||0;
+    if(dd) list.splice(+dd.dataset.deldoor,1);
+    else if(fd) c.doorList=[{from:0,to:"top",leaves:w>600?2:1}];
+    else{const top=list.reduce((m,d)=>Math.max(m,lvl(d.to,K)),0);
+      if(list.length&&top>=K+1){toast("Секция уже закрыта до верха. Измените «до» у двери или удалите её.");return;}
+      list.push({from:top,to:"top",leaves:w>600?2:1});}
+    if(!dd&&!S.showDoors){S.showDoors=true;$("showDoors").checked=true;}
+    compute();renderSecs();render();return;
+  }
   const ev=e.target.closest("[data-even]");
   if(ev){S.sections[+ev.dataset.even].gaps=[];render();return;}
   const card=e.target.closest(".sec"); if(card&&+card.dataset.i!==sel) selectSec(+card.dataset.i,false);
 });
 $("bAddSec").addEventListener("click",()=>{if(S.sections.length>=10){toast("Не больше 10 секций.");return;}
-  S.sections.push({w:"",kind:"shelves",shelves:4,doors:1,gaps:[]});sel=S.sections.length-1;renderSecs();render();});
+  S.sections.push({w:"",kind:"shelves",shelves:4,doorList:[{from:0,to:"top",leaves:1}],gaps:[]});sel=S.sections.length-1;renderSecs();render();});
 $("sideMode").addEventListener("click",e=>{const b=e.target.closest("button[data-mode]");if(!b||b.dataset.mode===S.sideMode) return;S.sideMode=b.dataset.mode;render();});
 $("front").addEventListener("click",e=>{if(dragMoved){dragMoved=false;return;}const h=e.target.closest(".hit,.shelf");if(h&&+h.dataset.sec!==sel) selectSec(+h.dataset.sec,true);});
 
