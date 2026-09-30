@@ -34,7 +34,10 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-
 .brand i::after{content:"";position:absolute;left:50%;top:0;bottom:0;border-left:2.5px solid var(--ink)}
 #projName{font:500 15px var(--f-body);border:1px solid transparent;background:transparent;color:var(--ink);padding:6px 8px;border-radius:6px;min-width:0;flex:1 1 200px;max-width:360px}
 #projName:hover,#projName:focus{border-color:var(--line);background:var(--panel);outline:none}
-.exports{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto}
+.exports{display:flex;flex-wrap:wrap;gap:8px}
+.bottom-bar{max-width:1500px;margin:18px auto 0;padding-block:16px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+.fb-link{background:none;border-color:transparent;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.fb-link:hover{color:var(--ink);border-color:transparent}
 button,.btn{font:500 13px var(--f-body);border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 button:hover{border-color:var(--muted)}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
@@ -104,6 +107,17 @@ td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
 td.num,th.num{text-align:right;white-space:nowrap}
 tr.grp td{font-weight:600;background:var(--bg);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .idb{display:inline-block;min-width:26px;text-align:center;font:600 12px var(--f-mono);border:1.5px solid var(--ink);border-radius:4px;padding:1px 3px}
+.edgecell{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.edgepick{display:grid;grid-template-columns:34px 46px 34px;grid-template-rows:20px 22px 20px;align-items:center;justify-items:center}
+.edgepick .e{font:600 11px var(--f-mono);padding:0 3px;min-width:30px;height:20px;border-radius:4px;justify-content:center;border:1px solid transparent;background:none;color:var(--muted)}
+.edgepick .e:hover{border-color:var(--line);color:var(--ink)}
+.edgepick .e2,.edgepick .e04{color:var(--accent)}
+.edgepick .t{grid-column:2;grid-row:1}.edgepick .b{grid-column:2;grid-row:3}.edgepick .l{grid-column:1;grid-row:2}.edgepick .r{grid-column:3;grid-row:2}
+.edgepick .core{grid-column:2;grid-row:2;width:44px;height:20px;background:var(--board);border:1px solid var(--line)}
+.core.te2{border-top:3px solid var(--accent)}.core.te04{border-top:2px dashed var(--accent)}
+.core.be2{border-bottom:3px solid var(--accent)}.core.be04{border-bottom:2px dashed var(--accent)}
+.core.le2{border-left:3px solid var(--accent)}.core.le04{border-left:2px dashed var(--accent)}
+.core.re2{border-right:3px solid var(--accent)}.core.re04{border-right:2px dashed var(--accent)}
 .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:10px;align-items:center}
 .legend i{display:inline-block;width:22px;height:0;vertical-align:middle;margin-right:6px}
 .sheets{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,460px),1fr));gap:16px}
@@ -135,15 +149,6 @@ input[type=file]{display:none}
 <header class="top">
   <div class="brand"><i aria-hidden="true"></i>CabCreator</div>
   <input id="projName" aria-label="Название проекта" value="">
-  <div class="exports">
-    <button id="bPdf" class="primary" title="Чертёж, спецификация и карты раскроя одним файлом">PDF чертежей</button>
-    <button id="bCsv" title="Список деталей для загрузки в сервис распила">CSV деталей</button>
-    <button id="bSvg" title="Карты раскроя в векторе">SVG раскроя</button>
-    <button id="bSave" title="Сохранить проект в файл">Сохранить</button>
-    <label class="btn" for="fOpen">Открыть</label><input id="fOpen" type="file" accept=".json,application/json">
-    <button id="bReset" title="Вернуть пример">Сброс</button>
-    <button id="bFb" title="Сообщить об ошибке или предложить доработку">Сообщить об ошибке</button>
-  </div>
 </header>
 
 <div class="wrap">
@@ -214,7 +219,8 @@ input[type=file]{display:none}
     <div class="legend">
       <span><i style="border-top:3px solid var(--accent)"></i>кромка 2 мм / 1 мм</span>
       <span><i style="border-top:1.5px dashed var(--accent)"></i>кромка 0,4 мм</span>
-      <span>Д1 — передний торец, Д2 — задний, Ш1/Ш2 — короткие торцы</span>
+      <span>Нажмите на сторону детали, чтобы сменить кромку: нет → 0,4 → 1 → 2 мм. Выбор действует на все детали с этим названием</span>
+      <span>Д1 — передний торец (сверху), Д2 — задний, Ш1/Ш2 — короткие торцы</span>
     </div>
   </section>
 
@@ -230,6 +236,16 @@ input[type=file]{display:none}
   </section>
 </main>
 </div>
+<footer class="bottom-bar">
+  <div class="exports">
+    <button id="bPdf" class="primary" title="Чертежи, спецификация, раскрой, присадка и инструкция одним файлом">PDF чертежей</button>
+    <button id="bCsv" title="Список деталей для загрузки в сервис распила">CSV деталей</button>
+    <button id="bSave" title="Сохранить проект в файл">Сохранить проект</button>
+    <label class="btn" for="fOpen">Открыть проект</label><input id="fOpen" type="file" accept=".json,application/json">
+    <button id="bReset" title="Вернуть пример">Сброс</button>
+  </div>
+  <button id="bFb" class="fb-link" title="Сообщить об ошибке или предложить доработку">Сообщить об ошибке</button>
+</footer>
 <div id="toast" hidden></div>
 <div id="fb" class="fb-back" hidden>
   <form id="fbForm" class="fb" role="dialog" aria-modal="true" aria-labelledby="fbTitle" novalidate>
@@ -251,7 +267,7 @@ input[type=file]{display:none}
 "use strict";
 const KEY="cabcreator.v1";
 const DEF={name:"Шкаф в прихожую",W:1800,H:2400,D:600,plinth:80,t:16,back:3,edgeFront:2,edgeDoor:2,
-  shelfInset:20,doorGap:3,subtractEdge:true,showDoors:false,sideMode:"cut",sheetL:2800,sheetW:2070,kerf:4,trim:10,grain:true,
+  shelfInset:20,doorGap:3,subtractEdge:true,showDoors:false,sideMode:"cut",edgeOv:{},sheetL:2800,sheetW:2070,kerf:4,trim:10,grain:true,
   sections:[{w:"",kind:"hanger",shelves:0,doorList:[{from:0,to:"top",leaves:2}]},{w:"",kind:"shelves",shelves:5,doorList:[{from:0,to:"top",leaves:1}]},{w:"450",kind:"shelves",shelves:4,doorList:[{from:0,to:2,leaves:1}]}]};
 const KINDS={shelves:"Полки",hanger:"Штанга + антресоль",empty:"Пустая"};
 let S=clone(DEF), sel=0;
@@ -346,7 +362,9 @@ function layout(s){
 
 function computeParts(s,L){
   const t=L.t, dc=s.D-(+s.back||0), ef=+s.edgeFront, ed=+s.edgeDoor, list=[];
+  const ov=s.edgeOv||{};
   const add=(name,len,wid,qty,edges,mat)=>{
+    if((mat||"ldsp")==="ldsp"&&Array.isArray(ov[name])) edges=ov[name].slice(0,4).map(v=>+v||0);
     if(qty<=0||len<=0||wid<=0) return;
     len=Math.round(len*2)/2; wid=Math.round(wid*2)/2;
     const key=[name,len,wid,edges.join(","),mat].join("|");
@@ -688,6 +706,14 @@ function edgeIcon(e){
   return `<svg width="46" height="22" viewBox="0 0 46 22" aria-hidden="true"><line x1="4" y1="3" x2="42" y2="3" ${st(e[0])}/><line x1="4" y1="19" x2="42" y2="19" ${st(e[1])}/><line x1="3" y1="4" x2="3" y2="18" ${st(e[2])}/><line x1="43" y1="4" x2="43" y2="18" ${st(e[3])}/></svg>`;
 }
 const edgeTxt=e=>e.map(v=>v?fmt(v):"—").join(" / ");
+/* per-side edge banding picker: the rectangle is the part (length across), sides cycle none → 0.4 → 1 → 2 mm;
+   a choice applies to every part with the same name */
+const EDGE_STEPS=[0,.4,1,2], SIDE_NAMES=["Д1 (передний)","Д2 (задний)","Ш1","Ш2"];
+function edgePicker(p){
+  const e=p.edges, cls=v=>v>=1?"e2":v>0?"e04":"e0", lab=v=>v?fmt(v):"—", ovd=S.edgeOv&&S.edgeOv[p.name];
+  const b=(side,pos)=>`<button type="button" class="e ${pos} ${cls(e[side])}" data-name="${esc(p.name)}" data-side="${side}" aria-label="${esc(p.name)}, кромка ${SIDE_NAMES[side]}: ${e[side]?fmt(e[side])+" мм":"нет"}" title="${SIDE_NAMES[side]}">${lab(e[side])}</button>`;
+  return `<div class="edgecell"><div class="edgepick">${b(0,"t")}${b(2,"l")}<span class="core ${["t","b","l","r"].map((k,i)=>k+cls(e[[0,1,2,3][i]])).join(" ")}"></span>${b(3,"r")}${b(1,"b")}</div>${ovd?`<button type="button" class="link" data-reset="${esc(p.name)}">по умолчанию</button>`:""}</div>`;
+}
 
 function render(){
   readTheme();compute();
@@ -702,11 +728,11 @@ function render(){
   $("warns").innerHTML=warns.map(w=>`<div class="warn">${esc(w)}</div>`).join("");
 
   // parts table
-  let rows=`<thead><tr><th>№</th><th>Деталь</th><th class="num">Длина</th><th class="num">Ширина</th><th class="num">Кол.</th><th>Кромка Д1/Д2/Ш1/Ш2</th><th class="num">Распил</th></tr></thead><tbody>`;
+  let rows=`<thead><tr><th>№</th><th>Деталь</th><th class="num">Длина</th><th class="num">Ширина</th><th class="num">Кол.</th><th>Кромка</th><th class="num">Распил</th></tr></thead><tbody>`;
   let grp="";
   P_.forEach(p=>{
     if(p.mat!==grp){grp=p.mat;rows+=`<tr class="grp"><td colspan="7">${p.mat==="ldsp"?`ЛДСП ${S.t} мм`:`ХДФ ${S.back} мм`}</td></tr>`;}
-    rows+=`<tr><td><span class="idb">${p.id}</span></td><td>${esc(p.name)}</td><td class="num">${fmt(p.len)}</td><td class="num">${fmt(p.wid)}</td><td class="num">${p.qty}</td><td><span style="display:inline-flex;align-items:center;gap:8px">${edgeIcon(p.edges)}<span class="mono" style="font-size:12px;color:var(--muted)">${edgeTxt(p.edges)}</span></span></td><td class="num">${fmt(p.cutL)}×${fmt(p.cutW)}</td></tr>`;
+    rows+=`<tr><td><span class="idb">${p.id}</span></td><td>${esc(p.name)}</td><td class="num">${fmt(p.len)}</td><td class="num">${fmt(p.wid)}</td><td class="num">${p.qty}</td><td>${p.mat==="ldsp"?edgePicker(p):`<span class="mono" style="color:var(--muted)">—</span>`}</td><td class="num">${fmt(p.cutL)}×${fmt(p.cutW)}</td></tr>`;
   });
   $("parts").innerHTML=rows+"</tbody>";
 
@@ -826,6 +852,18 @@ $("secs").addEventListener("click",e=>{
 });
 $("bAddSec").addEventListener("click",()=>{if(S.sections.length>=10){toast("Не больше 10 секций.");return;}
   S.sections.push({w:"",kind:"shelves",shelves:4,doorList:[{from:0,to:"top",leaves:1}],gaps:[]});sel=S.sections.length-1;renderSecs();render();});
+$("parts").addEventListener("click",e=>{
+  const r=e.target.closest("[data-reset]");
+  if(r){delete S.edgeOv[r.dataset.reset];render();toast(`Кромка «${r.dataset.reset}» — по умолчанию.`);return;}
+  const b=e.target.closest("button.e[data-side]"); if(!b) return;
+  const name=b.dataset.name, side=+b.dataset.side, p=P_.find(q=>q.name===name); if(!p) return;
+  const cur=p.edges.slice(), i=EDGE_STEPS.findIndex(v=>Math.abs(v-cur[side])<1e-6);
+  cur[side]=EDGE_STEPS[(i+1)%EDGE_STEPS.length];
+  if(!S.edgeOv) S.edgeOv={};
+  S.edgeOv[name]=cur;
+  render();
+  const again=document.querySelector(`#parts button.e[data-name="${CSS.escape(name)}"][data-side="${side}"]`); if(again) again.focus();
+});
 $("sideMode").addEventListener("click",e=>{const b=e.target.closest("button[data-mode]");if(!b||b.dataset.mode===S.sideMode) return;S.sideMode=b.dataset.mode;render();});
 $("front").addEventListener("click",e=>{if(dragMoved){dragMoved=false;return;}const h=e.target.closest(".hit,.shelf");if(h&&+h.dataset.sec!==sel) selectSec(+h.dataset.sec,true);});
 
@@ -909,15 +947,6 @@ function wrapSVG(vb,body,widthMM){
   const h=widthMM*vb[3]/vb[2];
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.join(" ")}" width="${widthMM}mm" height="${h}mm">${body}</svg>`;
 }
-$("bSvg").addEventListener("click",()=>{
-  compute();
-  if(!PK.sheets.length){toast("Нет деталей для раскроя.");return;}
-  let y=0,parts="",wmax=0;
-  PK.sheets.forEach((sh,i)=>{const v=sheetSVG(sh,i,S,P_,PRINT,{pfx:"x"});
-    parts+=`<svg x="0" y="${y}" width="${v.vb[2]}" height="${v.vb[3]}" viewBox="${v.vb.join(" ")}">${v.body}</svg>`;y+=v.vb[3];wmax=Math.max(wmax,v.vb[2]);});
-  const svg=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${wmax} ${y}" width="${wmax/10}mm" height="${y/10}mm"><rect width="${wmax}" height="${y}" fill="#fff"/>${parts}</svg>`;
-  saveFile(`${slug()}_раскрой.svg`,svg);
-});
 $("bSave").addEventListener("click",()=>saveFile(`${slug()}.json`,JSON.stringify(Object.assign({app:"CabCreator",version:1},S),null,2)));
 $("fOpen").addEventListener("change",e=>{
   const f=e.target.files&&e.target.files[0];if(!f) return;
