@@ -1,8 +1,12 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>CabCreator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Unbounded:wght@500;700&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<style>
+<style id="appCss">
 /* Layout: workshop bench — narrow parameter rail on the left, drawing board on the right; drawing, parts sheet and cutting maps stack like pages on a clipboard */
 :root{
   --bg:#e9ece8; --panel:#fbfcfa; --ink:#1c2320; --muted:#5d6a64; --line:#d1d8d3;
@@ -21,7 +25,8 @@
   --accent:#4cc0ad; --accent-soft:#1d3a35; --board:#7d6645; --board-edge:#caa168;
   --door:#4d6c80; --warn:#e98e5c; --warn-soft:#3a261b; --hatch:#2d3531; color-scheme:dark}
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body);padding-inline:16px;padding-block:0 40px}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body);padding-inline:16px;padding-block:0 40px}
+[hidden]{display:none!important}
 .mono,input[type=number],td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-block:18px 14px;max-width:1500px;margin:0 auto}
 .brand{font:700 18px/1 var(--f-display);letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
@@ -55,13 +60,27 @@ label.chk input{margin-top:3px;accent-color:var(--accent)}
 .x{border:none;background:none;color:var(--muted);padding:2px 6px;font-size:16px;line-height:1}
 .x:hover{color:var(--warn)}
 .row{display:flex;gap:8px;flex-wrap:wrap}
+.gaps{grid-column:1/-1;display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--line);padding-top:8px}
+.gaps-head{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
+button.link{border:none;background:none;padding:2px 4px;color:var(--accent);font-size:12px;text-decoration:underline;text-underline-offset:2px}
+.gaps-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:6px}
+.gaps-grid label.g{display:flex;flex-direction:column;gap:2px;font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;min-width:0}
+.gaps-grid input,.sec input.auto{min-width:0}
+.gaps-grid input{font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 6px;width:100%}
+.sec input:not(.auto)[data-k="gap"]{border-color:var(--accent)}
+.f-note{grid-column:1/-1;font-size:11.5px;color:var(--muted);margin-top:-4px}
 main{display:flex;flex-direction:column;gap:18px;min-width:0}
 .board{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
 .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .sec-head h2{margin:0}
 .sec-head .hint{font-size:12px;color:var(--muted)}
-#front{width:100%;height:auto;max-height:72vh;display:block;touch-action:manipulation}
+.views{display:grid;gap:14px;align-items:start}
+.views svg{width:100%;height:auto;max-height:74vh;display:block;min-width:0}
+#front{touch-action:manipulation}
 #front .hit{cursor:pointer}
+#front .shelf{cursor:ns-resize;touch-action:none}
+#front.dragging,#front.dragging *{cursor:ns-resize}
+@media (max-width:620px){.views{grid-template-columns:minmax(0,1fr)!important}.views #side{max-width:70%;justify-self:center}}
 .warns{display:flex;flex-direction:column;gap:6px}
 .warn{background:var(--warn-soft);color:var(--warn);border-radius:7px;padding:8px 10px;font-size:13px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
@@ -90,7 +109,8 @@ tr.grp td{font-weight:600;background:var(--bg);font-size:12px;text-transform:upp
 input[type=file]{display:none}
 @media (prefers-reduced-motion:no-preference){.sec{transition:background .15s,border-color .15s}}
 </style>
-
+</head>
+<body>
 <header class="top">
   <div class="brand"><i aria-hidden="true"></i>CabCreator</div>
   <input id="projName" aria-label="Название проекта" value="">
@@ -101,6 +121,7 @@ input[type=file]{display:none}
     <button id="bSave" title="Сохранить проект в файл">Сохранить</button>
     <label class="btn" for="fOpen">Открыть</label><input id="fOpen" type="file" accept=".json,application/json">
     <button id="bReset" title="Вернуть пример">Сброс</button>
+    <button id="bApp" title="Сохранить приложение одним HTML-файлом для работы без интернета и без Claude">Скачать приложение</button>
   </div>
 </header>
 
@@ -153,8 +174,11 @@ input[type=file]{display:none}
 
 <main>
   <section class="board">
-    <div class="sec-head"><h2>Вид спереди</h2><span class="hint">Нажмите на секцию, чтобы изменить её</span></div>
-    <svg id="front" role="img" aria-label="Чертёж шкафа, вид спереди"></svg>
+    <div class="sec-head"><h2>Вид спереди и разрез</h2><span class="hint">Нажмите на секцию, чтобы выбрать её. Полку можно перетащить</span></div>
+    <div class="views" id="views">
+      <svg id="front" role="img" aria-label="Чертёж шкафа, вид спереди" preserveAspectRatio="xMidYMin meet"></svg>
+      <svg id="side" role="img" aria-label="Разрез выбранной секции, вид сбоку" preserveAspectRatio="xMidYMin meet"></svg>
+    </div>
     <div class="warns" id="warns"></div>
   </section>
 
@@ -182,7 +206,7 @@ input[type=file]{display:none}
 </div>
 <div id="toast" hidden></div>
 
-<script>
+<script id="app">
 (function(){
 "use strict";
 const KEY="cabcreator.v1";
@@ -195,11 +219,20 @@ try{const raw=localStorage.getItem(KEY); if(raw){const o=JSON.parse(raw); if(o&&
 function clone(o){return JSON.parse(JSON.stringify(o))}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 const $=id=>document.getElementById(id);
+/* markup snapshot before first render: used to save the app as one standalone HTML file */
+const PRISTINE=["header.top",".wrap","#toast"].map(q=>document.querySelector(q).outerHTML).join("\n");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=n=>{const r=Math.round(n*10)/10;return (Number.isInteger(r)?String(r):r.toFixed(1)).replace(".",",")};
 const num=(v,d)=>{const n=parseFloat(v);return isFinite(n)?n:d};
 
 /* ---------- geometry ---------- */
+/* c.gaps: clear heights bottom-up (k shelves → k+1 gaps); "" = auto, autos share the rest */
+function normGaps(c,k){
+  if(!Array.isArray(c.gaps)) c.gaps=[];
+  while(c.gaps.length<k+1) c.gaps.push("");
+  if(c.gaps.length>k+1) c.gaps.length=k+1;
+  return c.gaps;
+}
 function layout(s){
   const t=+s.t, n=s.sections.length, warns=[];
   const inner=s.W-2*t-(n-1)*t;
@@ -216,18 +249,33 @@ function layout(s){
   const secs=ws.map((w,i)=>{const o={i,x,w,c:s.sections[i]};x+=w+t;return o});
   const yTop=t, yBot=s.H-s.plinth-t, hin=yBot-yTop;
   secs.forEach(sc=>{
-    sc.shelves=[];sc.rod=null;
-    if(sc.c.kind==="shelves"){const k=Math.max(0,Math.min(20,Math.round(num(sc.c.shelves,0))));const gap=(hin-k*t)/(k+1);
-      for(let j=0;j<k;j++) sc.shelves.push(yTop+gap*(j+1)+t*j); sc.gap=gap;
-      if(k&&gap<150) warns.push(`Секция ${sc.i+1}: между полками всего ${fmt(gap)} мм.`);}
-    else if(sc.c.kind==="hanger"){const y=yTop+Math.min(380,Math.round(hin*0.2));sc.shelves.push(y);sc.rod=y+t+60;
-      if(sc.w>1000) warns.push(`Секция ${sc.i+1}: штанга длиннее 1000 мм прогнётся — добавьте перегородку.`);}
+    sc.shelves=[];sc.rod=null;sc.gaps=[];sc.gapAuto=[];
+    const k=sc.c.kind==="shelves"?Math.max(0,Math.min(20,Math.round(num(sc.c.shelves,0)))):sc.c.kind==="hanger"?1:0;
+    if(k){
+      const g=normGaps(sc.c,k);
+      const vals=g.map(v=>num(v,0)>0?num(v,0):null);
+      if(sc.c.kind==="hanger"){vals[0]=null;if(vals[1]===null) vals[1]=Math.min(360,Math.round(hin*0.18));}
+      let autos=vals.map((v,j)=>v===null?j:-1).filter(j=>j>=0);
+      if(!autos.length){vals[k]=null;autos=[k];}
+      const rest=hin-k*t-vals.reduce((a,v)=>a+(v||0),0);
+      const aw=Math.floor(rest/autos.length*2)/2;
+      autos.forEach(j=>vals[j]=aw);
+      vals[autos[autos.length-1]]+=rest-aw*autos.length;
+      sc.gaps=vals;sc.gapAuto=g.map((v,j)=>autos.includes(j)||!(num(v,0)>0));
+      if(rest<autos.length*50) warns.push(`Секция ${sc.i+1}: заданные просветы не помещаются по высоте ${fmt(hin)} мм.`);
+      let y=yBot;
+      for(let j=0;j<k;j++){y-=vals[j]+t;sc.shelves.push(y);}
+      if(sc.c.kind==="shelves"){const mn=Math.min(...vals);if(mn>0&&mn<120) warns.push(`Секция ${sc.i+1}: просвет всего ${fmt(mn)} мм.`);}
+      if(sc.c.kind==="hanger"){sc.rod=sc.shelves[0]+t+60;
+        if(vals[0]<1000) warns.push(`Секция ${sc.i+1}: под штангой ${fmt(vals[0]-60)} мм — мало для одежды на плечиках.`);
+        if(sc.w>1000) warns.push(`Секция ${sc.i+1}: штанга длиннее 1000 мм прогнётся — добавьте перегородку.`);}
+    }
     if(sc.w<120) warns.push(`Секция ${sc.i+1} уже 120 мм.`);
     if(sc.c.kind==="shelves"&&sc.w>900) warns.push(`Секция ${sc.i+1}: полка ${fmt(sc.w)} мм из ЛДСП ${t} мм будет провисать, лучше до 800 мм.`);
-    const k=+sc.c.doors||0; sc.doors=[];
-    if(k){const g=+s.doorGap, L=sc.x-(sc.i===0?t:t/2), R=sc.x+sc.w+(sc.i===n-1?t:t/2);
-      const dw=Math.floor(((R-L)-g*k)/k*2)/2, y0=g/2, dh=Math.floor((s.H-s.plinth-g)*2)/2;
-      for(let j=0;j<k;j++){const hinge=k===2?(j===0?"L":"R"):(sc.i<(n-1)/2?"L":(sc.i>(n-1)/2?"R":"L"));
+    const kd=+sc.c.doors||0; sc.doors=[];
+    if(kd){const g=+s.doorGap, L=sc.x-(sc.i===0?t:t/2), R=sc.x+sc.w+(sc.i===n-1?t:t/2);
+      const dw=Math.floor(((R-L)-g*kd)/kd*2)/2, y0=g/2, dh=Math.floor((s.H-s.plinth-g)*2)/2;
+      for(let j=0;j<kd;j++){const hinge=kd===2?(j===0?"L":"R"):(sc.i<(n-1)/2?"L":(sc.i>(n-1)/2?"R":"L"));
         sc.doors.push({x:L+g/2+j*(dw+g),y:y0,w:dw,h:dh,hinge});}}
   });
   if(s.H>s.sheetL-2*s.trim) warns.push(`Высота ${s.H} мм больше рабочей длины листа ${s.sheetL-2*s.trim} мм — боковины не выкроить из одного листа.`);
@@ -362,12 +410,13 @@ function frontSVG(s,L,P,o){
     if(sc.rod){g+=`<line x1="${sc.x+fs*.2}" y1="${sc.rod}" x2="${sc.x+sc.w-fs*.2}" y2="${sc.rod}" stroke="${P.ink}" stroke-width="${fs*.28}" stroke-linecap="round"/>`;
       const hx=sc.x+sc.w/2, hy=sc.rod;
       g+=`<path d="M${hx} ${hy-fs*.1} q0 ${-fs*.8} ${fs*.5} ${-fs*.8}" fill="none" stroke="${P.muted}" stroke-width="${sw*1.3}"/>`;}
-    // clear heights
-    if(sc.c.kind==="shelves"&&sc.shelves.length&&!o.doors){
-      const y1=sc.shelves[0], y0=y1-sc.gap;
-      g+=`<text x="${sc.x+sc.w/2}" y="${(y0+y1)/2+fs*.35}" text-anchor="middle" font-size="${fs*.8}" font-family="${P.mono}" fill="${P.muted}">↕ ${fmt(sc.gap)}</text>`;}
-    if(sc.c.kind==="hanger"&&!o.doors){const hh=L.yBot-sc.rod;
-      g+=`<text x="${sc.x+sc.w/2}" y="${sc.rod+hh/2}" text-anchor="middle" font-size="${fs*.8}" font-family="${P.mono}" fill="${P.muted}">↕ ${fmt(hh)}</text>`;}
+    // clear heights, bottom-up; fixed values in ink, auto in muted
+    if(!o.doors) sc.gaps.forEach((gv,j)=>{
+      const lo=j===0?L.yBot:sc.shelves[j-1], hi=lo-gv;
+      if(gv<fs*1.4) return;
+      const cy=(sc.c.kind==="hanger"&&j===0)?(sc.rod+lo)/2:(lo+hi)/2;
+      g+=`<text x="${sc.x+sc.w/2}" y="${cy+fs*.3}" text-anchor="middle" font-size="${fs*.78}" font-family="${P.mono}" fill="${sc.gapAuto[j]?P.muted:P.ink}"${sc.gapAuto[j]?"":' font-weight="600"'}>↕ ${fmt(gv)}</text>`;
+    });
   });
   if(o.doors) L.secs.forEach(sc=>sc.doors.forEach(d=>{
     g+=`<rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" fill="${P.door}" fill-opacity=".72" stroke="${P.ink}" stroke-width="${sw*1.4}"/>`;
@@ -381,6 +430,10 @@ function frontSVG(s,L,P,o){
     const on=sc.i===o.sel;
     g+=`<rect class="hit" data-sec="${sc.i}" x="${sc.x}" y="${L.yTop}" width="${sc.w}" height="${L.hin}" fill="${on?P.accentSoft:"transparent"}" fill-opacity="${on?.5:0}" stroke="${on?P.accent:"none"}" stroke-width="${fs*.14}" stroke-dasharray="${fs*.6} ${fs*.4}"><title>Секция ${sc.i+1}</title></rect>`;
   });
+  // shelf drag handles (on top of the hit areas)
+  if(o.interactive&&!o.doors) L.secs.forEach(sc=>sc.shelves.forEach((y,j)=>{
+    g+=`<rect class="shelf" data-sec="${sc.i}" data-j="${j}" x="${sc.x}" y="${y-fs*.45}" width="${sc.w}" height="${t+fs*.9}" fill="transparent"><title>Перетащите полку, чтобы изменить просвет</title></rect>`;
+  }));
   // dimensions
   let d="";
   d+=dimH(0,W,-m*.55,0,fmt(W),P,fs);
@@ -390,6 +443,41 @@ function frontSVG(s,L,P,o){
   L.secs.forEach(sc=>d+=dimH(sc.x,sc.x+sc.w,H+m*.55,H,fmt(sc.w),P,fs,`секция ${sc.i+1}`));
   d+=`<text x="${W}" y="${H+m*1.75}" text-anchor="end" font-size="${fs*.8}" font-family="${P.font}" fill="${P.muted}">Глубина ${fmt(s.D)} · ЛДСП ${t} мм${+s.back?` · ХДФ ${s.back} мм`:""}</text>`;
   d+=`<line x1="${-m*.2}" y1="${H}" x2="${W+m*.2}" y2="${H}" stroke="${P.ink}" stroke-width="${sw*1.5}"/>`;
+  return {vb,body:g+d};
+}
+
+/* Side view: section through one bay, looking at the left side panel. Back on the left, fronts on the right; same scale and vertical frame as frontSVG */
+function sideSVG(s,L,si,P,o){
+  o=o||{};
+  const sc=L.secs[Math.max(0,Math.min(si,L.secs.length-1))];
+  const H=s.H,D=s.D,t=L.t,bk=+s.back||0,dc=D-bk,fs=Math.max(s.W,H)*.022,m=fs*4.2;
+  const hasDoor=sc.doors.length>0, xF=D+(hasDoor?t:0);
+  const vb=[-m*.45,-m*1.05,xF+m*1.25,H+m*2.1];
+  const pid=`cut${sc.i}${o.pfx||""}`, sw=fs*.07;
+  const C=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${P.board}" stroke="${P.edge}" stroke-width="${sw}"/><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#${pid})"/>`;
+  let g=`<defs><pattern id="${pid}" width="${fs*.55}" height="${fs*.55}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${fs*.55}" stroke="${P.edge}" stroke-width="${fs*.07}"/></pattern></defs>`;
+  // left side panel seen behind the cut
+  g+=`<rect x="0" y="0" width="${D}" height="${H}" fill="${P.board}" fill-opacity=".38" stroke="${P.edge}" stroke-width="${sw}"/>`;
+  if(bk) g+=`<rect x="0" y="2" width="${bk}" height="${H-s.plinth-4}" fill="${P.ink}" fill-opacity=".55"/>`;
+  g+=C(bk,0,dc,t)+C(bk,L.yBot,dc,t);
+  if(s.plinth>0) g+=C(D-t,H-s.plinth,t,s.plinth);
+  const sd=dc-(+s.shelfInset||0);
+  sc.shelves.forEach(y=>g+=C(bk,y,sd,t));
+  if(sc.rod) g+=`<circle cx="${bk+dc/2}" cy="${sc.rod}" r="12.5" fill="${P.bg}" stroke="${P.ink}" stroke-width="${sw*2}"/>`;
+  sc.doors.slice(0,1).forEach(d=>g+=C(D+1,d.y,t,d.h));
+  g+=`<line x1="${-m*.2}" y1="${H}" x2="${xF+m*.2}" y2="${H}" stroke="${P.ink}" stroke-width="${sw*1.5}"/>`;
+  // dimensions
+  let d=dimH(0,D,-m*.55,0,fmt(D),P,fs);
+  if(sc.shelves.length){
+    d+=dimH(bk,bk+sd,H+m*.55,H,fmt(sd),P,fs,"полка");
+    if(+s.shelfInset>0) d+=`<text x="${(bk+sd+D)/2}" y="${H+m*.55+fs*1.25}" text-anchor="middle" font-size="${fs*.7}" font-family="${P.mono}" fill="${P.muted}">+${fmt(+s.shelfInset)}</text>`;
+  }
+  // gap chain on the front side
+  const xc=xF+m*.62;
+  sc.gaps.forEach((gv,j)=>{const lo=j===0?L.yBot:sc.shelves[j-1], hi=lo-gv;d+=dimV(hi,lo,xc,xF+fs*.3,gv>=fs*2.4?fmt(gv):"",P,fs*.85);});
+  if(!sc.gaps.length) d+=dimV(L.yTop,L.yBot,xc,xF+fs*.3,fmt(L.hin),P,fs*.85);
+  d+=`<text x="${xF/2}" y="${H+m*1.75}" text-anchor="middle" font-size="${fs*.8}" font-family="${P.font}" fill="${P.muted}">Разрез · секция ${sc.i+1}</text>`;
+  d+=`<text x="${xF}" y="${-m*.92}" text-anchor="end" font-size="${fs*.7}" font-family="${P.font}" fill="${P.muted}">фасад →</text>`;
   return {vb,body:g+d};
 }
 
@@ -437,6 +525,8 @@ function render(){
   readTheme();compute();
   const f=frontSVG(S,L,SCREEN,{interactive:true,sel,doors:S.showDoors});
   const fr=$("front"); fr.setAttribute("viewBox",f.vb.join(" ")); fr.innerHTML=f.body;
+  const sv=sideSVG(S,L,sel,SCREEN), sd=$("side"); sd.setAttribute("viewBox",sv.vb.join(" ")); sd.innerHTML=sv.body;
+  $("views").style.gridTemplateColumns=`minmax(0,${f.vb[2].toFixed(0)}fr) minmax(0,${sv.vb[2].toFixed(0)}fr)`;
   const warns=[...L.warns];
   if(PK.over.length) warns.push(`Не помещаются на лист: ${PK.over.map(p=>`#${p.id} ${p.name}`).join(", ")}. Проверьте размер листа или снимите учёт текстуры.`);
   const back=P_.find(p=>p.mat==="hdf"); if(back&&Math.min(back.len,back.wid)>2070) warns.push("Задняя стенка больше листа ХДФ 2800×2070 — её нужно делать из двух частей со стыком на перегородке.");
@@ -482,6 +572,18 @@ $("projName").addEventListener("input",e=>{S.name=e.target.value;persist();});
 
 let tmr=null; function schedule(){clearTimeout(tmr);tmr=setTimeout(render,120);}
 
+function gapInputs(c,i){
+  if(c.kind==="shelves"){
+    const k=Math.max(0,Math.min(20,Math.round(num(c.shelves,0))));
+    if(!k) return "";
+    const g=normGaps(c,k);
+    return `<div class="gaps"><div class="gaps-head"><span>Просветы снизу вверх, мм</span><button type="button" class="link" data-even="${i}">Поровну</button></div>
+      <div class="gaps-grid">${g.map((v,j)=>`<label class="g"><span>${j===0?"низ":j===k?"верх":j+1}</span><input id="sg${i}_${j}" type="number" min="40" step="1" value="${esc(v)}" data-k="gap" data-j="${j}" aria-label="Просвет ${j+1} снизу"></label>`).join("")}</div></div>`;
+  }
+  if(c.kind==="hanger"){normGaps(c,1);
+    return `<label class="f">Антресоль, мм<input id="sg${i}_1" type="number" min="150" step="1" value="${esc(c.gaps[1])}" data-k="gap" data-j="1"></label><span class="f-note">Штанга на 60 мм ниже полки антресоли</span>`;}
+  return "";
+}
 function renderSecs(){
   $("secs").innerHTML=S.sections.map((c,i)=>`
   <div class="sec${i===sel?" sel":""}" data-i="${i}">
@@ -490,11 +592,17 @@ function renderSecs(){
     <label class="f">Наполнение<select id="sk${i}" data-k="kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}"${c.kind===k?" selected":""}>${v}</option>`).join("")}</select></label>
     <label class="f">Полок<input id="sn${i}" type="number" min="0" max="20" value="${c.shelves}" data-k="shelves"${c.kind!=="shelves"?" disabled":""}></label>
     <label class="f">Двери<select id="sd${i}" data-k="doors">${[0,1,2].map(n=>`<option value="${n}"${+c.doors===n?" selected":""}>${n===0?"нет":n}</option>`).join("")}</select></label>
+    ${gapInputs(c,i)}
   </div>`).join("");
+  if(L) updateSecMeta();
 }
 function updateSecMeta(){
   L.secs.forEach(sc=>{const el=document.querySelector(`[data-meta="${sc.i}"]`);if(el) el.textContent=`${fmt(sc.w)} мм`;
-    const inp=$("sw"+sc.i); if(inp) inp.placeholder=`авто · ${fmt(sc.w)}`;});
+    const inp=$("sw"+sc.i); if(inp) inp.placeholder=`авто · ${fmt(sc.w)}`;
+    sc.gaps.forEach((v,j)=>{const gi=$(`sg${sc.i}_${j}`);if(!gi) return;gi.placeholder=`авто ${fmt(v)}`;
+      const want=sc.c.gaps&&sc.c.gaps[j]!==undefined?String(sc.c.gaps[j]):"";
+      if(document.activeElement!==gi&&gi.value!==want) gi.value=want;
+      gi.classList.toggle("auto",!!sc.gapAuto[j]);});});
 }
 function selectSec(i,scroll){
   sel=i;
@@ -502,21 +610,58 @@ function selectSec(i,scroll){
   if(scroll){const el=document.querySelector(`.sec[data-i="${i}"]`);if(el) el.scrollIntoView({block:"nearest",behavior:"smooth"});}
   render();
 }
+function rerenderSecs(focusId){renderSecs();const f=focusId&&$(focusId);if(f){f.focus();}}
 $("secs").addEventListener("input",e=>{
   const card=e.target.closest(".sec"),k=e.target.dataset.k; if(!card||!k) return;
   const i=+card.dataset.i, c=S.sections[i];
-  if(k==="w") c.w=e.target.value; else if(k==="kind"){c.kind=e.target.value;$("sn"+i).disabled=c.kind!=="shelves";if(c.kind==="shelves"&&!c.shelves){c.shelves=3;$("sn"+i).value=3;}}
+  if(k==="w") c.w=e.target.value;
+  else if(k==="kind"){c.kind=e.target.value;c.gaps=[];if(c.kind==="shelves"&&!c.shelves) c.shelves=3;compute();rerenderSecs(e.target.id);}
+  else if(k==="gap"){normGaps(c,c.kind==="hanger"?1:Math.round(num(c.shelves,0)));c.gaps[+e.target.dataset.j]=e.target.value;}
+  else if(k==="shelves"){c.shelves=Math.max(0,Math.min(20,Math.round(parseFloat(e.target.value)||0)));c.gaps=[];}
   else c[k]=parseFloat(e.target.value)||0;
   schedule();
 });
+$("secs").addEventListener("change",e=>{if(e.target.dataset.k==="shelves"){compute();rerenderSecs(e.target.id);}});
 $("secs").addEventListener("click",e=>{
   const del=e.target.closest("[data-del]");
   if(del){S.sections.splice(+del.dataset.del,1);sel=Math.min(sel,S.sections.length-1);renderSecs();render();return;}
+  const ev=e.target.closest("[data-even]");
+  if(ev){S.sections[+ev.dataset.even].gaps=[];render();return;}
   const card=e.target.closest(".sec"); if(card&&+card.dataset.i!==sel) selectSec(+card.dataset.i,false);
 });
 $("bAddSec").addEventListener("click",()=>{if(S.sections.length>=10){toast("Не больше 10 секций.");return;}
-  S.sections.push({w:"",kind:"shelves",shelves:4,doors:1});sel=S.sections.length-1;renderSecs();render();});
-$("front").addEventListener("click",e=>{const h=e.target.closest(".hit");if(h) selectSec(+h.dataset.sec,true);});
+  S.sections.push({w:"",kind:"shelves",shelves:4,doors:1,gaps:[]});sel=S.sections.length-1;renderSecs();render();});
+$("front").addEventListener("click",e=>{if(dragMoved){dragMoved=false;return;}const h=e.target.closest(".hit,.shelf");if(h&&+h.dataset.sec!==sel) selectSec(+h.dataset.sec,true);});
+
+/* drag a shelf: moves it between its neighbours, changing the gap below and the gap above */
+let drag=null,dragMoved=false,raf=0;
+const svgY=(svg,e)=>{const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;return pt.matrixTransform(svg.getScreenCTM().inverse()).y;};
+$("front").addEventListener("pointerdown",e=>{
+  const h=e.target.closest(".shelf"); if(!h) return;
+  e.preventDefault();
+  const si=+h.dataset.sec,j=+h.dataset.j,sc=L.secs[si],c=S.sections[si],fr=$("front");
+  c.gaps=sc.gaps.map(v=>Math.round(v));
+  if(c.kind==="hanger") c.gaps[0]="";
+  const lo=j===0?L.yBot:sc.shelves[j-1];
+  drag={si,j,lo,sum:sc.gaps[j]+sc.gaps[j+1],off:svgY(fr,e)-sc.shelves[j],hanger:c.kind==="hanger"};
+  dragMoved=false;
+  fr.setPointerCapture(e.pointerId);fr.classList.add("dragging");
+  if(sel!==si){sel=si;document.querySelectorAll(".sec").forEach(el=>el.classList.toggle("sel",+el.dataset.i===si));}
+});
+$("front").addEventListener("pointermove",e=>{
+  if(!drag) return;
+  const fr=$("front"), top=svgY(fr,e)-drag.off, min=40;
+  let gb=Math.round(drag.lo-L.t-top);
+  gb=Math.max(min,Math.min(drag.sum-min,gb));
+  const c=S.sections[drag.si];
+  if(drag.hanger){c.gaps[0]="";c.gaps[1]=drag.sum-gb;}else{c.gaps[drag.j]=gb;c.gaps[drag.j+1]=drag.sum-gb;}
+  dragMoved=true;
+  if(!raf) raf=requestAnimationFrame(()=>{raf=0;render();});
+});
+const endDrag=e=>{if(!drag) return;drag=null;const fr=$("front");fr.classList.remove("dragging");try{fr.releasePointerCapture(e.pointerId);}catch(_){}
+  renderSecs();render();};
+$("front").addEventListener("pointerup",endDrag);
+$("front").addEventListener("pointercancel",endDrag);
 $("bReset").addEventListener("click",()=>{S=clone(DEF);sel=0;bindGeneral();renderSecs();render();toast("Загружен пример шкафа.");});
 
 /* ---------- toast ---------- */
@@ -524,14 +669,28 @@ let tt=null;
 function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,3200);}
 
 /* ---------- exports ---------- */
+/* Two ways to save: inside Claude the viewer's `downloads` capability; anywhere else (a local file, GitHub Pages, offline) a plain browser download */
+const IN_CLAUDE=!!(window.claude&&typeof window.claude.use==="function");
 let DL=null;
-(async()=>{try{if(window.claude&&window.claude.use) DL=await window.claude.use("downloads");}catch(e){DL=null;} })();
+const DLready=IN_CLAUDE?window.claude.use("downloads").then(d=>(DL=d),()=>null):Promise.resolve(null);
 const slug=()=>(S.name||"shkaf").trim().replace(/[\\/:*?"<>|]+/g,"").replace(/\s+/g,"_").slice(0,60)||"shkaf";
+const MIME={html:"text/html;charset=utf-8",csv:"text/csv;charset=utf-8",svg:"image/svg+xml",json:"application/json",pdf:"application/pdf"};
 
+function browserDownload(filename,data){
+  const ext=filename.split(".").pop().toLowerCase();
+  const blob=data instanceof Blob?data:new Blob([data],{type:MIME[ext]||"application/octet-stream"});
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url;a.download=filename;a.rel="noopener";a.hidden=true;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+  toast(`Файл ${filename} скачан.`);
+}
 async function saveFile(filename,data){
+  if(!IN_CLAUDE){browserDownload(filename,data);return;}
+  await DLready;
   if(!DL){
-    if(typeof data==="string"){try{await navigator.clipboard.writeText(data);toast("Скачивание здесь недоступно — содержимое скопировано в буфер обмена.");}catch(e){toast("Скачивание недоступно в этом окне. Откройте страницу в Claude.");}}
-    else toast("Скачивание недоступно в этом окне. Откройте страницу в Claude.");
+    if(typeof data==="string"){try{await navigator.clipboard.writeText(data);toast("Скачивание в этом окне недоступно — содержимое скопировано в буфер обмена.");}catch(e){toast("Скачивание в этом окне недоступно. Скачайте приложение и откройте его в браузере.");}}
+    else toast("Скачивание в этом окне недоступно. Скачайте приложение и откройте его в браузере.");
     return;
   }
   try{const r=await DL.save({filename,data});if(r&&r.status==="saved") toast(`Файл ${filename} сохранён.`);}
@@ -612,43 +771,78 @@ async function svgToJpeg(svg){
   await img.decode();
   const c=document.createElement("canvas");c.width=PW;c.height=PH;
   const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,PW,PH);x.drawImage(img,0,0,PW,PH);
-  return c.toDataURL("image/jpeg",0.92);
+  const blob=await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error("jpeg")),"image/jpeg",0.9));
+  return {bytes:new Uint8Array(await blob.arrayBuffer()),w:PW,h:PH};
+}
+/* Minimal PDF 1.4 writer: one full-page JPEG per A4 landscape page. No libraries, works offline */
+function buildPDF(pages){
+  const enc=new TextEncoder(), chunks=[], offs=[];let pos=0;
+  const put=x=>{const b=typeof x==="string"?enc.encode(x):x;chunks.push(b);pos+=b.length;};
+  const obj=(n,body)=>{offs[n]=pos;put(`${n} 0 obj\n`);body();put("\nendobj\n");};
+  const PWpt=841.89,PHpt=595.28, n=pages.length;
+  put("%PDF-1.4\n");put(new Uint8Array([37,226,227,207,211,10]));
+  const kids=pages.map((_,i)=>`${3+i*3} 0 R`).join(" ");
+  obj(1,()=>put("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2,()=>put(`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`));
+  pages.forEach((pg,i)=>{
+    const po=3+i*3, co=po+1, io=po+2, content=`q ${PWpt} 0 0 ${PHpt} 0 0 cm /Im0 Do Q`;
+    obj(po,()=>put(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PWpt} ${PHpt}] /Resources << /XObject << /Im0 ${io} 0 R >> >> /Contents ${co} 0 R >>`));
+    obj(co,()=>put(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`));
+    obj(io,()=>{put(`<< /Type /XObject /Subtype /Image /Width ${pg.w} /Height ${pg.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.bytes.length} >>\nstream\n`);put(pg.bytes);put("\nendstream");});
+  });
+  const total=3+n*3, xref=pos;
+  let x=`xref\n0 ${total}\n0000000000 65535 f \n`;
+  for(let k=1;k<total;k++) x+=String(offs[k]).padStart(10,"0")+" 00000 n \n";
+  put(x+`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(chunks,{type:"application/pdf"});
+}
+function pdfPages(){
+  const inners=[], T=`font-family="${PRINT.font}" font-size="60" font-weight="700" fill="#1a1a1a"`;
+  const fv=frontSVG(S,L,PRINT,{doors:false}), fd=frontSVG(S,L,PRINT,{doors:true});
+  const any=L.secs.some(sc=>sc.doors.length);
+  let p1=`<text x="160" y="230" ${T}>Общий вид${any?" · без дверей и с дверями":""}</text>`;
+  p1+=any?nested(fv,160,280,1300,1480)+nested(fd,1510,280,1300,1480):nested(fv,160,280,2650,1480);
+  inners.push([p1,"Вид спереди"]);
+  // side sections, up to 4 per page
+  for(let i=0;i<L.secs.length;i+=4){
+    const grp=L.secs.slice(i,i+4), cw=(PW-320)/4;
+    let g=`<text x="160" y="230" ${T}>Разрезы по секциям (вид сбоку)</text>`;
+    grp.forEach((sc,k)=>{g+=nested(sideSVG(S,L,sc.i,PRINT),160+k*cw,280,cw-40,1480);});
+    inners.push([g,"Разрезы"]);
+  }
+  tablePages().forEach(g=>inners.push([g,"Спецификация"]));
+  let hw=`<text x="160" y="230" ${T}>Фурнитура и расходники</text>`;
+  HW.list.forEach(([a,b],i)=>{const y=360+i*70;hw+=`<text x="160" y="${y}" font-family="${PRINT.font}" font-size="40" fill="#1a1a1a">${esc(a)}</text><text x="1500" y="${y}" font-family="${PRINT.mono}" font-size="40" text-anchor="end" fill="#1a1a1a">${esc(b)}</text><line x1="160" y1="${y+22}" x2="1500" y2="${y+22}" stroke="#cccccc" stroke-width="2"/>`;});
+  hw+=`<text x="1700" y="360" font-family="${PRINT.font}" font-size="40" font-weight="700" fill="#1a1a1a">Параметры раскроя</text>`;
+  [`Лист ЛДСП: ${S.sheetL}×${S.sheetW}×${S.t} мм`,`Листов: ${PK.sheets.length}`,`Пропил: ${fmt(+S.kerf)} мм, обзол: ${fmt(+S.trim)} мм`,`Текстура: ${S.grain?"учитывается, без поворота":"поворот разрешён"}`,`Кромка ≥1 мм ${S.subtractEdge?"вычтена":"не вычтена"} из распила`].forEach((t,i)=>hw+=`<text x="1700" y="${440+i*62}" font-family="${PRINT.font}" font-size="36" fill="#1a1a1a">${esc(t)}</text>`);
+  inners.push([hw,"Фурнитура"]);
+  PK.sheets.forEach((sh,i)=>{const v=sheetSVG(sh,i,S,P_,PRINT,{pfx:"p"});inners.push([nested(v,160,160,PW-320,PH-160-360),`Карта раскроя ${i+1}`]);});
+  return inners;
 }
 $("bPdf").addEventListener("click",async()=>{
-  if(!(window.jspdf&&window.jspdf.jsPDF)){toast("Модуль PDF не загрузился. Используйте SVG и CSV.");return;}
   compute();
   const btn=$("bPdf");btn.disabled=true;btn.textContent="Готовлю PDF…";
   try{
-    const inners=[];
-    // page 1: front view + summary
-    const fv=frontSVG(S,L,PRINT,{doors:false}), fd=frontSVG(S,L,PRINT,{doors:true});
-    const any=L.secs.some(sc=>sc.doors.length);
-    let p1=`<text x="160" y="230" font-family="${PRINT.font}" font-size="60" font-weight="700" fill="#1a1a1a">Общий вид${any?" · без дверей и с дверями":""}</text>`;
-    p1+=any?nested(fv,160,280,1300,1480)+nested(fd,1510,280,1300,1480):nested(fv,160,280,2650,1480);
-    inners.push([p1,"Вид спереди"]);
-    tablePages().forEach(g=>inners.push([g,"Спецификация"]));
-    // hardware page
-    let hw=`<text x="160" y="230" font-family="${PRINT.font}" font-size="60" font-weight="700" fill="#1a1a1a">Фурнитура и расходники</text>`;
-    HW.list.forEach(([a,b],i)=>{const y=360+i*70;hw+=`<text x="160" y="${y}" font-family="${PRINT.font}" font-size="40" fill="#1a1a1a">${esc(a)}</text><text x="1500" y="${y}" font-family="${PRINT.mono}" font-size="40" text-anchor="end" fill="#1a1a1a">${esc(b)}</text><line x1="160" y1="${y+22}" x2="1500" y2="${y+22}" stroke="#cccccc" stroke-width="2"/>`;});
-    hw+=`<text x="1700" y="360" font-family="${PRINT.font}" font-size="40" font-weight="700" fill="#1a1a1a">Параметры раскроя</text>`;
-    [`Лист ЛДСП: ${S.sheetL}×${S.sheetW}×${S.t} мм`,`Листов: ${PK.sheets.length}`,`Пропил: ${fmt(+S.kerf)} мм, обзол: ${fmt(+S.trim)} мм`,`Текстура: ${S.grain?"учитывается, без поворота":"поворот разрешён"}`,`Кромка ≥1 мм ${S.subtractEdge?"вычтена":"не вычтена"} из распила`].forEach((t,i)=>hw+=`<text x="1700" y="${440+i*62}" font-family="${PRINT.font}" font-size="36" fill="#1a1a1a">${esc(t)}</text>`);
-    inners.push([hw,"Фурнитура"]);
-    PK.sheets.forEach((sh,i)=>{const v=sheetSVG(sh,i,S,P_,PRINT,{pfx:"p"});inners.push([nested(v,160,160,PW-320,PH-160-360),`Карта раскроя ${i+1}`]);});
-    const {jsPDF}=window.jspdf, doc=new jsPDF({orientation:"landscape",unit:"mm",format:"a4",compress:true});
+    const inners=pdfPages(), imgs=[];
     for(let i=0;i<inners.length;i++){
       btn.textContent=`PDF: лист ${i+1} из ${inners.length}…`;
-      const jpg=await svgToJpeg(page(inners[i][0],inners[i][1],i+1,inners.length));
-      if(i) doc.addPage("a4","landscape");
-      doc.addImage(jpg,"JPEG",0,0,297,210);
+      imgs.push(await svgToJpeg(page(inners[i][0],inners[i][1],i+1,inners.length)));
     }
-    const blob=doc.output("blob");
-    await saveFile(`${slug()}_чертежи.pdf`,blob);
+    await saveFile(`${slug()}_чертежи.pdf`,buildPDF(imgs));
   }catch(e){toast("Не удалось собрать PDF. Попробуйте SVG и CSV.");}
   finally{btn.disabled=false;btn.textContent="PDF чертежей";}
 });
+
+function appHTML(){
+  const css=$("appCss").textContent, js=$("app").textContent;
+  return `<!doctype html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n<title>CabCreator</title>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Unbounded:wght@500;700&display=swap">\n<style id="appCss">${css}</style>\n</head>\n<body>\n${PRISTINE}\n<script id="app">${js}<\/script>\n</body>\n</html>\n`;
+}
+$("bApp").addEventListener("click",()=>saveFile("CabCreator.html",appHTML()));
 
 try{matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>render());}catch(e){}
 new MutationObserver(()=>render()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
 bindGeneral();renderSecs();render();
 })();
 </script>
+</body>
+</html>
