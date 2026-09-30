@@ -400,11 +400,17 @@ function hardware(s,L,parts,DR){
   if(rods.length) out.push(["Штанга Ø25",rods.map(w=>`${fmt(w-2)} мм`).join(", ")],["Штангодержатель",`${rods.length*2} шт`]);
   if(hinges) out.push(["Петля накладная, 110°",`${hinges} шт`],["Ручка (по выбору, отверстия по месту)",`${handles} шт`]);
   if(+s.back) out.push([`Гвоздь / саморез для ХДФ`,`${Math.ceil(2*((s.H-s.plinth)+s.W)/150)+ (n-1)*Math.ceil((s.H-s.plinth)/200)} шт`]);
-  if(s.plinth>0) out.push(["Опора регулируемая",`${n>2?6:4} шт`]); else out.push(["Подпятник",`${n>2?6:4} шт`]);
+  out.push(["Подпятник набивной Ø20",`${glideCount(s)} шт`]);
   if(s.H>1600) out.push(["Крепление к стене (уголок)","2 шт"]);
   return {list:out,edge};
 }
 
+/* the carcass stands on the bottom ends of the sides and the plinth: nail-in glides go there, no drilling needed */
+function glidePoints(s){const t=+s.t,bk=+s.back||0,D=s.D,W=s.W,pl=+s.plinth||0;
+  const pts=[[t/2,bk+50],[t/2,D-50],[W-t/2,bk+50],[W-t/2,D-50]];
+  if(pl>0) pts.push([t+60,D-t/2],[W-t-60,D-t/2]);
+  return pts;}
+const glideCount=s=>glidePoints(s).length;
 /* ---------- drilling (присадка) ----------
    Euro system: confirmat 7×50 (Ø7 through the face + Ø5×50 into the mating edge), shelf pins Ø5 at 37 mm from edges,
    hinge cup Ø35×12 at 22.5 mm from the door edge, mounting plate Ø5×12 at 37 mm from the carcass front, 32 mm apart. */
@@ -1076,7 +1082,7 @@ const IC={
   rod:`<rect x="6" y="43" width="88" height="14" fill="#fff" stroke="#111" stroke-width="3"/><ellipse cx="94" cy="50" rx="3" ry="7" fill="#fff" stroke="#111" stroke-width="2"/>`,
   holder:`<circle cx="50" cy="50" r="30" fill="#fff" stroke="#111" stroke-width="3"/><circle cx="50" cy="50" r="13" fill="#fff" stroke="#111" stroke-width="3"/>${[0,120,240].map(a=>`<circle cx="${50+22*Math.cos(a*Math.PI/180-Math.PI/2)}" cy="${50+22*Math.sin(a*Math.PI/180-Math.PI/2)}" r="3" fill="#111"/>`).join("")}`,
   nail:`<rect x="12" y="38" width="5" height="24" fill="#111"/><path d="M17 48 H82 L90 50 L82 52 H17 Z" fill="#fff" stroke="#111" stroke-width="2.5"/>`,
-  foot:`<rect x="28" y="64" width="44" height="16" rx="3" fill="#fff" stroke="#111" stroke-width="3"/><rect x="44" y="18" width="12" height="46" fill="#fff" stroke="#111" stroke-width="3"/>${[24,32,40,48,56].map(y=>`<line x1="44" y1="${y}" x2="56" y2="${y+4}" stroke="#111" stroke-width="2"/>`).join("")}`,
+  foot:`<path d="M22 70 Q50 84 78 70 L74 60 H26 Z" fill="#fff" stroke="#111" stroke-width="3" stroke-linejoin="round"/><path d="M50 60 V22" stroke="#111" stroke-width="5"/><path d="M44 30 L50 16 L56 30" fill="#111"/>`,
   bracket:`<path d="M22 18 V78 H82" fill="none" stroke="#111" stroke-width="12" stroke-linejoin="miter"/><path d="M22 18 V78 H82" fill="none" stroke="#fff" stroke-width="6"/><circle cx="22" cy="40" r="3" fill="#111"/><circle cx="60" cy="78" r="3" fill="#111"/>`,
   screw:`<path d="M20 38 L28 44 V56 L20 62 Z" fill="#fff" stroke="#111" stroke-width="3"/><rect x="28" y="46" width="44" height="8" fill="#fff" stroke="#111" stroke-width="2.5"/><path d="M72 46 L82 50 L72 54" fill="#fff" stroke="#111" stroke-width="2.5"/>${[34,42,50,58,66].map(x=>`<line x1="${x}" y1="46" x2="${x+4}" y2="54" stroke="#111" stroke-width="1.5"/>`).join("")}`,
   hex:`<path d="M28 16 V72 Q28 82 38 82 H84" fill="none" stroke="#111" stroke-width="11" stroke-linecap="round"/>`,
@@ -1096,7 +1102,7 @@ function asmData(){
   const confIn=(detRe,whatRe)=>DR.dets.reduce((a,d)=>a+(detRe.test(d.title)?d.qty*d.holes.filter(h=>h.kind==="conf7"&&whatRe.test(h.what)).length:0),0);
   const rods=L.secs.filter(sc=>sc.rod).length, doorsN=L.secs.reduce((a,sc)=>a+sc.doors.length,0);
   const nails=+S.back?Math.ceil(2*((S.H-pl)+S.W)/150)+(n-1)*Math.ceil((S.H-pl)/200):0;
-  return {n,pl,rods,doorsN,nails,feet:n>2?6:4,wall:S.H>1600,
+  return {n,pl,rods,doorsN,nails,feet:glideCount(S),wall:S.H>1600,
     c:{bottom:confIn(/левая/,/дно|цоколь/),top:confIn(/левая/,/крышка/),parts:confIn(/^(Крышка|Дно)$/,/перегородка/),
        fixed:confIn(/./,/неподвижная|антресоли/),right:confIn(/правая/,/./),pin:cnt.pin,cup:cnt.cup,handle:cnt.handle}};
 }
@@ -1114,7 +1120,7 @@ function asmSteps(){
   step(["sideR"],{sideR:[off,0,0]},[["conf",A.c.right]],push("sideR",[off,0,0]));
   st.push({kind:"diag",shown:done.slice()});
   if(has("back")) step(["back"],{back:[0,0,-off]},[["nail",A.nails]],push("back",[0,0,-off]),"hammer");
-  if(A.pl) st.push({kind:"feet",shown:done.slice(),hw:[["foot",A.feet]]});
+  st.push({kind:"feet",shown:done.slice(),hw:[["foot",A.feet]]});
   st.push({kind:"lift",shown:done.slice()});
   if(A.wall) st.push({kind:"wall",shown:done.slice(),hw:[["bracket",2],["screw",4]]});
   if(has("loose")) step(["loose"],{loose:[0,0,off]},[["pin",A.c.pin]],push("loose",[0,0,off]));
@@ -1162,12 +1168,15 @@ function stepPanel(s0,no,x,y,w,h){
         return `<polygon points="${[w0,w1,w2,w3].map(p=>p.join(",")).join(" ")}" fill="none" stroke="#111" stroke-width="${sw}" stroke-dasharray="${sw*6} ${sw*4}"/>`+[a,b].map((p,i)=>`<g transform="translate(${p[0]+(i?-span*.09:span*.02)} ${p[1]-span*.02}) scale(${span*.0007})">${IC.bracket}</g>`).join("");}:
       s0.kind==="handle"?(P,span,sw)=>L.secs.flatMap(sc=>sc.doors).map(d=>{const x=d.hinge==="L"?d.x+d.w-40:d.x+40,yc=S.H-d.y-d.h/2,z=S.D+S.t+1;
         const p=P(x,yc-64,z+30),q=P(x,yc+64,z+30);return `<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="#111" stroke-width="${sw*5}" stroke-linecap="round"/>`;}).join(""):
-      s0.kind==="feet"?(P,span,sw)=>{const pts=[[40,0,S.D-60],[S.W-40,0,S.D-60],[40,0,120],[S.W-40,0,120]];if(A_n()>2) pts.push([S.W/2,0,S.D-60],[S.W/2,0,120]);
-        return pts.map(p=>{const a=P(p[0],-10,p[2]),b=P(p[0],-span*.06,p[2]);return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#111" stroke-width="${sw*4}"/><rect x="${b[0]-span*.015}" y="${b[1]}" width="${span*.03}" height="${span*.012}" fill="#fff" stroke="#111" stroke-width="${sw}"/>`;}).join("")+
-          (()=>{const c=P(S.W/2,-span*.1,S.D/2);return `<path d="M${c[0]-span*.05} ${c[1]} a${span*.05} ${span*.02} 0 1 0 ${span*.1} 0" fill="none" stroke="#111" stroke-width="${sw*3}"/><polygon points="${c[0]+span*.05},${c[1]} ${c[0]+span*.035},${c[1]-span*.02} ${c[0]+span*.068},${c[1]-span*.015}" fill="#111"/>`;})();}:null;
+      s0.kind==="feet"?(P,span,sw)=>glidePoints(S).map(([x,z])=>{
+          // glide drawn below its edge, dashed guide up to the edge, arrow showing the hammer blow
+          const e=P(x,0,z), g0=P(x,-span*.09,z), r=span*.016;
+          return `<line x1="${g0[0]}" y1="${g0[1]}" x2="${e[0]}" y2="${e[1]}" stroke="#111" stroke-width="${sw}" stroke-dasharray="${sw*5} ${sw*4}"/>`+
+            `<ellipse cx="${g0[0]}" cy="${g0[1]}" rx="${r}" ry="${r*.5}" fill="#fff" stroke="#111" stroke-width="${sw*1.3}"/><line x1="${g0[0]}" y1="${g0[1]}" x2="${g0[0]}" y2="${g0[1]-r*1.3}" stroke="#111" stroke-width="${sw*2}"/>`+
+            `<polygon points="${g0[0]},${g0[1]-span*.05} ${g0[0]-r*.55},${g0[1]-span*.032} ${g0[0]+r*.55},${g0[1]-span*.032}" fill="#111"/>`;}).join(""):null;
     v=isoSVG(boxes,{move:s0.move,arrows:s0.arrow?[s0.arrow]:[],after});
     if(s0.extra==="hammer") g+=icon("hammer",x+w-(s0.hw?470:150),y+30,130);
-    if(s0.kind==="feet") g+=icon("level",x+w-460,y+50,140);
+    if(s0.kind==="feet") g+=icon("hammer",x+w-440,y+30,130);
   }
   g+=nested(v,x,top,w,ah);
   return g;
@@ -1197,7 +1206,7 @@ function asmPages(){
   ld.forEach((p,i)=>{const x=M+(i%cols)*cw, y=150+Math.floor(i/cols)*ch;
     const bxv=isoSVG([{grp:"p",x0:0,x1:p.len,y0:0,y1:p.wid,z0:0,z1:p.mat==="hdf"?4:S.t,fill:p.mat==="hdf"?"#f1f1f1":"#ffffff",id:""}],{label:false});
     inv+=nested(bxv,x+10,y+10,cw-40,200)+`<circle cx="${x+60}" cy="${y+260}" r="38" fill="#fff" stroke="#111" stroke-width="4"/><text x="${x+60}" y="${y+275}" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="700" fill="#111">${p.id}</text><text x="${x+130}" y="${y+276}" font-family="Arial, sans-serif" font-size="46" font-weight="700" fill="#111">${p.qty}x</text>`;});
-  const A=asmData(), hwl=[["conf",DR.count.conf],["pin",DR.count.pin],["hinge",DR.count.cup],["handle",DR.count.handle],["rod",A.rods],["holder",A.rods*2],["screw",A.rods*6+(A.wall?4:0)],["nail",A.nails],["foot",A.pl?A.feet:0],["bracket",A.wall?2:0]].filter(q=>q[1]>0);
+  const A=asmData(), hwl=[["conf",DR.count.conf],["pin",DR.count.pin],["hinge",DR.count.cup],["handle",DR.count.handle],["rod",A.rods],["holder",A.rods*2],["screw",A.rods*6+(A.wall?4:0)],["nail",A.nails],["foot",A.feet],["bracket",A.wall?2:0]].filter(q=>q[1]>0);
   const hy=150+Math.ceil(ld.length/cols)*ch+40;
   inv+=`<line x1="${M}" y1="${hy-20}" x2="${PW-M}" y2="${hy-20}" stroke="#111" stroke-width="4"/>`;
   hwl.forEach(([k,n],i)=>{const x=M+(i%5)*((PW-2*M)/5), y=hy+Math.floor(i/5)*300;
