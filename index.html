@@ -11,7 +11,7 @@
 :root{
   --bg:#e9ece8; --panel:#fbfcfa; --ink:#1c2320; --muted:#5d6a64; --line:#d1d8d3;
   --accent:#0d6b5f; --accent-soft:#d6ebe6; --board:#e6d2ab; --board-edge:#a98247;
-  --door:#9fb9c9; --warn:#a4491a; --warn-soft:#f6e4d8; --hatch:#c9cfca;
+  --door:#9fb9c9; --warn:#a4491a; --danger:#c62828; --warn-soft:#f6e4d8; --hatch:#c9cfca;
   --f-display:"Unbounded","Golos Text",system-ui,sans-serif;
   --f-body:"Golos Text",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
@@ -19,11 +19,11 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#141816; --panel:#1c221f; --ink:#e4eae6; --muted:#93a19a; --line:#2e3833;
   --accent:#4cc0ad; --accent-soft:#1d3a35; --board:#7d6645; --board-edge:#caa168;
-  --door:#4d6c80; --warn:#e98e5c; --warn-soft:#3a261b; --hatch:#2d3531; color-scheme:dark}}
+  --door:#4d6c80; --warn:#e98e5c; --danger:#d84343; --warn-soft:#3a261b; --hatch:#2d3531; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#141816; --panel:#1c221f; --ink:#e4eae6; --muted:#93a19a; --line:#2e3833;
   --accent:#4cc0ad; --accent-soft:#1d3a35; --board:#7d6645; --board-edge:#caa168;
-  --door:#4d6c80; --warn:#e98e5c; --warn-soft:#3a261b; --hatch:#2d3531; color-scheme:dark}
+  --door:#4d6c80; --warn:#e98e5c; --danger:#d84343; --warn-soft:#3a261b; --hatch:#2d3531; color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body);padding-inline:16px;padding-block:0 40px}
 [hidden]{display:none!important}
@@ -36,8 +36,8 @@ header.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;padding-
 #projName:hover,#projName:focus{border-color:var(--line);background:var(--panel);outline:none}
 .exports{display:flex;flex-wrap:wrap;gap:8px}
 .bottom-bar{max-width:1500px;margin:18px auto 0;padding-block:16px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
-.fb-link{background:none;border-color:transparent;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
-.fb-link:hover{color:var(--ink);border-color:transparent}
+button.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+button.danger:hover{filter:brightness(1.1);border-color:var(--danger)}
 button,.btn{font:500 13px var(--f-body);border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 button:hover{border-color:var(--muted)}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
@@ -238,13 +238,13 @@ input[type=file]{display:none}
 </div>
 <footer class="bottom-bar">
   <div class="exports">
-    <button id="bPdf" class="primary" title="Чертежи, спецификация, раскрой, присадка и инструкция одним файлом">PDF чертежей</button>
+    <button id="bPdf" title="Чертежи, спецификация, раскрой, присадка и инструкция одним файлом">PDF чертежей</button>
     <button id="bCsv" title="Список деталей для загрузки в сервис распила">CSV деталей</button>
     <button id="bSave" title="Сохранить проект в файл">Сохранить проект</button>
     <label class="btn" for="fOpen">Открыть проект</label><input id="fOpen" type="file" accept=".json,application/json">
     <button id="bReset" title="Вернуть пример">Сброс</button>
   </div>
-  <button id="bFb" class="fb-link" title="Сообщить об ошибке или предложить доработку">Сообщить об ошибке</button>
+  <button id="bFb" class="danger" title="Сообщить об ошибке или предложить доработку">Сообщить об ошибке</button>
 </footer>
 <div id="toast" hidden></div>
 <div id="fb" class="fb-back" hidden>
