@@ -337,7 +337,7 @@ function computeParts(s,L){
   add("Перегородка",L.hin,dc,L.secs.length-1,[ef,0,0,0]);
   L.secs.forEach(sc=>{
     const nf=(sc.fixed||[]).filter(Boolean).length, nl=sc.shelves.length-nf;
-    if(nl) add("Полка",sc.w,dc-(+s.shelfInset||0),nl,[ef,0,0,0]);
+    if(nl) add(sc.c.kind==="hanger"?"Полка антресоли":"Полка",sc.w,dc-(+s.shelfInset||0),nl,[ef,0,0,0]);
     if(nf) add("Полка неподвижная",sc.w,dc,nf,[ef,0,0,0]);
   });
   L.secs.forEach(sc=>sc.doors.forEach(d=>add("Дверь",d.h,d.w,1,[ed,ed,ed,ed])));
@@ -386,15 +386,10 @@ function pack(parts,s){
   return {sheets,over:[...new Set(over)]};
 }
 
-function hardware(s,L,parts){
-  const n=L.secs.length, dc=s.D-(+s.back||0);
-  const perJoint=Math.max(2,Math.round(dc/180));
-  let confirm=2*2*perJoint+(n-1)*2*perJoint+(s.plinth>0?4:0);
-  let supports=0,rods=[],hinges=0,handles=0,doors=0;
-  L.secs.forEach(sc=>{ const nf=(sc.fixed||[]).filter(Boolean).length;
-    if(sc.c.kind==="shelves"){supports+=4*(sc.shelves.length-nf);confirm+=2*perJoint*nf;} else if(sc.c.kind==="hanger") confirm+=2*perJoint;
-    if(sc.rod) rods.push(sc.w);
-    sc.doors.forEach(d=>{doors++;handles++;hinges+=d.h<=900?2:d.h<=1600?3:d.h<=2000?4:5;});});
+function hardware(s,L,parts,DR){
+  const n=L.secs.length, cnt=DR.count;
+  const confirm=cnt.conf, supports=cnt.pin, hinges=cnt.cup, handles=cnt.handle;
+  const rods=L.secs.filter(sc=>sc.rod).map(sc=>sc.w);
   const edge={};
   parts.forEach(p=>{if(p.mat!=="ldsp")return;
     [p.len,p.len,p.wid,p.wid].forEach((len,i)=>{const e=p.edges[i];if(e>0) edge[e]=(edge[e]||0)+len*p.qty/1000;});});
@@ -408,6 +403,95 @@ function hardware(s,L,parts){
   if(s.plinth>0) out.push(["Опора регулируемая",`${n>2?6:4} шт`]); else out.push(["Подпятник",`${n>2?6:4} шт`]);
   if(s.H>1600) out.push(["Крепление к стене (уголок)","2 шт"]);
   return {list:out,edge};
+}
+
+/* ---------- drilling (присадка) ----------
+   Euro system: confirmat 7×50 (Ø7 through the face + Ø5×50 into the mating edge), shelf pins Ø5 at 37 mm from edges,
+   hinge cup Ø35×12 at 22.5 mm from the door edge, mounting plate Ø5×12 at 37 mm from the carcass front, 32 mm apart. */
+const hingeCount=h=>h<=900?2:h<=1600?3:h<=2000?4:5;
+function hingePos(h){const k=hingeCount(h),a=100,b=h-100;return Array.from({length:k},(_,i)=>Math.round(a+(b-a)*i/(k-1)));}
+function cpos(len,off){const k=Math.max(2,Math.round(len/180)),a=50,b=len-50;return Array.from({length:k},(_,i)=>(off||0)+Math.round(a+(b-a)*i/(k-1)));}
+const HOLE={
+  conf7:{d:7,dep:"скв.",what:"конфирмат, зенковка"},
+  conf5:{d:5,dep:"50",what:"конфирмат (торец)"},
+  pin:{d:5,dep:"12",what:"полкодержатель"},
+  plate:{d:5,dep:"12",what:"планка петли"},
+  cup:{d:35,dep:"12",what:"чашка петли"},
+  handle:{d:5,dep:"скв.",what:"ручка, 128 мм"},
+  rod:{d:3,dep:"10",what:"штангодержатель, по месту"}
+};
+function drillModel(s,L,parts){
+  const t=L.t,H=s.H,W=s.W,bk=+s.back||0,dc=s.D-bk,ins=+s.shelfInset||0,sd=dc-ins,n=L.secs.length,pl=+s.plinth||0;
+  const R=v=>Math.round(v*2)/2;
+  const pid=(name,len,wid)=>{const p=parts.find(q=>q.name===name&&q.len===R(len)&&q.wid===R(wid));return p?p.id:"";};
+  const H_=(kind,x,y,face,extra)=>Object.assign({kind,x:R(x),y:R(y),face},HOLE[kind],extra||{});
+  // holes that a section puts on the face of a vertical panel; yb0 = front-view Y of the panel bottom
+  function secHoles(sc,face,yb0,isPart,hinge){
+    const out=[];
+    sc.shelves.forEach((y,j)=>{
+      const fixed=sc.fixed&&sc.fixed[j], hang=sc.c.kind==="hanger";
+      if(fixed||hang){const span=fixed?dc:sd, off=fixed?0:ins;
+        cpos(span,off).forEach(x=>out.push(H_("conf7",x,yb0-(y+t/2),face,{what:fixed?"конфирмат, неподвижная полка":"конфирмат, полка антресоли"})));}
+      else [ins+37,dc-37].forEach(x=>out.push(H_("pin",x,yb0-(y+t)-7,face,isPart?{dep:"10"}:{})));
+    });
+    if(sc.rod) out.push(H_("rod",dc/2,yb0-sc.rod,face));
+    sc.doors.filter(d=>d.hinge===hinge).forEach(d=>hingePos(d.h).forEach(p=>{
+      const yc=yb0-(d.y+d.h)+p; [yc-16,yc+16].forEach(yy=>out.push(H_("plate",37,yy,face,isPart?{dep:"10"}:{})));}));
+    return out;
+  }
+  const dets=[];
+  const addDet=d=>{d.holes.sort((a,b)=>a.y-b.y||a.x-b.x);
+    const sig=[d.name,d.w,d.h,JSON.stringify(d.holes.map(h=>[h.kind,h.x,h.y,h.face]))].join("|");
+    const ex=dets.find(q=>q.sig===sig); if(ex){ex.qty+=d.qty||1;return;} d.sig=sig;d.qty=d.qty||1;dets.push(d);};
+  // sides: drawn from the inside, front edge on the left, x from the front edge, y from the floor
+  [["left",L.secs[0],"L","Боковина левая"],["right",L.secs[n-1],"R","Боковина правая"]].forEach(([k,sc,hinge,title])=>{
+    const h=[];
+    cpos(dc).forEach(x=>{h.push(H_("conf7",x,H-t/2,"A",{what:"конфирмат, крышка"}));h.push(H_("conf7",x,pl+t/2,"A",{what:"конфирмат, дно"}));});
+    if(pl>0) (pl>100?[30,pl-30]:[pl/2]).forEach(y=>h.push(H_("conf7",t/2,y,"A",{what:"конфирмат, цоколь"})));
+    h.push(...secHoles(sc,"A",H,false,hinge));
+    addDet({note:"Зенковка отверстий Ø7 — с наружной стороны боковины",name:"Боковина",title,id:pid("Боковина",H,dc),w:dc,h:H,holes:h,front:"left",view:"вид с внутренней стороны",faces:{A:"внутр. пласть"}});
+  });
+  // partitions: face A looks into the section on the left, face B into the right one
+  for(let k=0;k<n-1;k++){
+    const a=L.secs[k],b=L.secs[k+1],hin=L.hin,h=[];
+    cpos(dc).forEach(x=>{h.push(H_("conf5",x,hin,"top",{what:"конфирмат, крышка"}));h.push(H_("conf5",x,0,"bottom",{what:"конфирмат, дно"}));});
+    const A=secHoles(a,"A",L.yBot,true,"R"), B=secHoles(b,"B",L.yBot,true,"L");
+    // pins at the same place on both faces become one through hole for a double pin
+    B.forEach(hb=>{const m=A.find(ha=>ha.kind==="pin"&&hb.kind==="pin"&&Math.abs(ha.x-hb.x)<2&&Math.abs(ha.y-hb.y)<6);
+      if(m){m.dep="скв.";m.face="AB";m.what="полкодержатель двусторонний";m.double=true;} else h.push(hb);});
+    h.push(...A);
+    addDet({note:"Сквозные Ø7 сверлить со стороны, противоположной полке; зенковка с этой же стороны",name:"Перегородка",title:`Перегородка ${k+1} (между секциями ${k+1} и ${k+2})`,id:pid("Перегородка",hin,dc),w:dc,h:hin,holes:h,front:"left",view:`вид со стороны секции ${k+1}`,faces:{A:`пласть к секции ${k+1}`,B:`пласть к секции ${k+2}`}});
+  }
+  // top and bottom: x from the left end, y from the front edge
+  const Lp=W-2*t;
+  [["Крышка","сверху","Зенковка отверстий Ø7 — с наружной (верхней) стороны"],["Дно","сверху","Зенковка отверстий Ø7 — с наружной (нижней) стороны"]].forEach(([name,vw,note])=>{
+    const h=[];
+    cpos(dc).forEach(y=>{h.push(H_("conf5",0,y,"left",{what:"конфирмат, боковина"}));h.push(H_("conf5",Lp,y,"right",{what:"конфирмат, боковина"}));});
+    for(let k=1;k<n;k++){const xc=L.secs[k].x-t/2-t;cpos(dc).forEach(y=>h.push(H_("conf7",xc,y,"A",{what:`конфирмат, перегородка ${k}`})));}
+    addDet({name,title:name,id:pid(name,Lp,dc),w:Lp,h:dc,holes:h,front:"bottom",view:`вид ${vw}`,faces:{A:"пласть"},note:n>1?note:""});
+  });
+  if(pl>0){const h=[];(pl>100?[30,pl-30]:[pl/2]).forEach(y=>{h.push(H_("conf5",0,y,"left",{what:"конфирмат, боковина"}));h.push(H_("conf5",Lp,y,"right",{what:"конфирмат, боковина"}));});
+    addDet({name:"Цоколь",title:"Цоколь",id:pid("Цоколь",Lp,pl),w:Lp,h:pl,holes:h,front:"none",view:"вид спереди",faces:{A:"пласть"}});}
+  // fixed shelves and mezzanine shelves get edge holes at both ends
+  L.secs.forEach(sc=>sc.shelves.forEach((y,j)=>{
+    const fixed=sc.fixed&&sc.fixed[j], hang=sc.c.kind==="hanger"; if(!fixed&&!hang) return;
+    const dep=fixed?dc:sd,h=[];
+    cpos(dep).forEach(yy=>{h.push(H_("conf5",0,yy,"left",{what:"конфирмат"}));h.push(H_("conf5",sc.w,yy,"right",{what:"конфирмат"}));});
+    const name=fixed?"Полка неподвижная":"Полка антресоли";
+    addDet({name,title:fixed?"Полка неподвижная":"Полка антресоли",id:pid(name,sc.w,dep),w:sc.w,h:dep,holes:h,front:"bottom",view:"вид сверху",faces:{A:"пласть"}});
+  }));
+  // doors: drawn from the inside, so a left-hinged door (seen from the front) has its cups on the right
+  L.secs.forEach(sc=>sc.doors.forEach(d=>{
+    const h=[], xc=d.hinge==="L"?d.w-22.5:22.5, xh=d.hinge==="L"?40:d.w-40;
+    hingePos(d.h).forEach(y=>h.push(H_("cup",xc,y,"A")));
+    if(d.h>=300) [d.h/2-64,d.h/2+64].forEach(y=>h.push(H_("handle",xh,y,"A")));
+    else [d.w/2-64,d.w/2+64].forEach(x=>h.push(H_("handle",x,d.h/2,"A")));
+    addDet({name:"Дверь",title:`Дверь, петли ${d.hinge==="L"?"слева":"справа"} (вид спереди)`,id:pid("Дверь",d.h,d.w),w:d.w,h:d.h,holes:h,front:"none",view:"вид с внутренней стороны",faces:{A:"внутр. пласть"}});
+  }));
+  const count={conf:0,pin:0,cup:0,handle:0};
+  dets.forEach(d=>d.holes.forEach(h=>{const q=d.qty;
+    if(h.kind==="conf7") count.conf+=q; else if(h.kind==="pin") count.pin+=q*(h.double?2:1); else if(h.kind==="cup") count.cup+=q; else if(h.kind==="handle") count.handle+=q/2;}));
+  return {dets,count};
 }
 
 /* ---------- drawing ---------- */
@@ -568,8 +652,8 @@ function sheetSVG(sh,idx,s,parts,P,o){
 }
 
 /* ---------- render ---------- */
-let L,P_,PK,HW;
-function compute(){L=layout(S);P_=computeParts(S,L);PK=pack(P_,S);HW=hardware(S,L,P_);}
+let L,P_,PK,HW,DR;
+function compute(){L=layout(S);P_=computeParts(S,L);PK=pack(P_,S);DR=drillModel(S,L,P_);HW=hardware(S,L,P_,DR);}
 
 function edgeIcon(e){
   const st=v=>v>=1?`style="stroke:var(--accent)" stroke-width="3"`:v>0?`style="stroke:var(--accent)" stroke-width="1.6" stroke-dasharray="3 2"`:`style="stroke:var(--line)" stroke-width="1"`;
@@ -849,6 +933,135 @@ function tablePages(){
   // hardware on last table page if room
   return out;
 }
+
+/* ---------- part drilling sheets ---------- */
+const WHERE={A:"пласть",B:"пласть Б",AB:"насквозь",top:"торец верх",bottom:"торец низ",left:"торец лев.",right:"торец прав."};
+function detailSVG(d,P){
+  const w=d.w,h=d.h,fs=Math.max(w,h)*.028,m=fs*3.4,Y=y=>h-y;
+  const vb=[-m*1.35,-m*1.0,w+m*2.5,h+m*2.2];
+  let g=`<rect x="0" y="0" width="${w}" height="${h}" fill="${P.board}" stroke="${P.ink}" stroke-width="${fs*.09}"/>`;
+  if(d.front==="left") g+=`<line x1="0" y1="0" x2="0" y2="${h}" stroke="${P.accent}" stroke-width="${fs*.35}"/><text x="${fs*.6}" y="${h/2}" transform="rotate(-90 ${fs*.6} ${h/2})" text-anchor="middle" dy="${fs*.35}" font-size="${fs*.75}" font-family="${P.font}" fill="${P.accent}">перед</text>`;
+  if(d.front==="bottom") g+=`<line x1="0" y1="${h}" x2="${w}" y2="${h}" stroke="${P.accent}" stroke-width="${fs*.35}"/><text x="${w/2}" y="${h-fs*.45}" text-anchor="middle" font-size="${fs*.75}" font-family="${P.font}" fill="${P.accent}">перед</text>`;
+  d.holes.forEach((o,i)=>{
+    const r=Math.max(o.d/2,fs*.22), x=o.x, y=Y(o.y), no=i+1, lf=fs*.62;
+    let lx=x+r+fs*.12, ly=y-r*.2, anc="start";
+    if(o.face==="left"||o.face==="right"||o.face==="top"||o.face==="bottom"){
+      const dep=+o.dep||50, dx=o.face==="left"?1:o.face==="right"?-1:0, dy=o.face==="top"?1:o.face==="bottom"?-1:0;
+      g+=`<line x1="${x}" y1="${y}" x2="${x+dx*dep}" y2="${y+dy*dep}" stroke="${P.ink}" stroke-width="${fs*.08}" stroke-dasharray="${fs*.3} ${fs*.2}"/><circle cx="${x}" cy="${y}" r="${fs*.22}" fill="${P.ink}"/>`;
+      if(o.face==="left"){lx=x-fs*.4;anc="end";ly=y+lf*.35;} else if(o.face==="right"){lx=x+fs*.4;ly=y+lf*.35;} else if(o.face==="top"){lx=x;ly=y-fs*.45;anc="middle";} else {lx=x;ly=y+fs*1.05;anc="middle";}
+    } else if(o.face==="B"){
+      g+=`<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${P.muted}" stroke-width="${fs*.07}" stroke-dasharray="${fs*.18} ${fs*.12}"/>`;
+    } else {
+      const thru=o.dep==="скв.";
+      g+=`<circle cx="${x}" cy="${y}" r="${r}" fill="${thru?P.ink:"#ffffff"}" stroke="${P.ink}" stroke-width="${fs*.08}"/>`;
+      if(!thru) g+=`<path d="M${x-r*.7} ${y}H${x+r*.7}M${x} ${y-r*.7}V${y+r*.7}" stroke="${P.ink}" stroke-width="${fs*.05}"/>`;
+    }
+    g+=`<text x="${lx}" y="${ly}" text-anchor="${anc}" font-size="${lf}" font-family="${P.mono}" fill="${P.ink}">${no}</text>`;
+  });
+  g+=dimH(0,w,h+m*.62,h,fmt(w),P,fs)+dimV(0,h,-m*.75,0,fmt(h),P,fs);
+  g+=`<g stroke="${P.accent}" stroke-width="${fs*.1}" fill="none"><path d="M0 ${h}h${fs*1.6}M${fs*1.6-fs*.35} ${h-fs*.25}l${fs*.35} ${fs*.25}l${-fs*.35} ${fs*.25}"/><path d="M0 ${h}v${-fs*1.6}M${-fs*.25} ${h-fs*1.6+fs*.35}l${fs*.25} ${-fs*.35}l${fs*.25} ${fs*.35}"/></g>`;
+  g+=`<text x="${-fs*.25}" y="${h+fs*.95}" text-anchor="end" font-size="${fs*.7}" font-family="${P.mono}" fill="${P.accent}">0</text>`;
+  return {vb,body:g};
+}
+function legendSVG(x,y,P){
+  const f=`font-family="${P.font}" font-size="28" fill="${P.ink}"`;
+  const it=[
+    [`<circle cx="0" cy="0" r="13" fill="#fff" stroke="${P.ink}" stroke-width="3"/><path d="M-9 0H9M0 -9V9" stroke="${P.ink}" stroke-width="2"/>`,"глухое в пласть"],
+    [`<circle cx="0" cy="0" r="13" fill="${P.ink}"/>`,"сквозное"],
+    [`<circle cx="0" cy="0" r="13" fill="none" stroke="${P.muted}" stroke-width="3" stroke-dasharray="5 4"/>`,"с обратной пласти"],
+    [`<circle cx="-14" cy="0" r="7" fill="${P.ink}"/><line x1="-14" y1="0" x2="20" y2="0" stroke="${P.ink}" stroke-width="3" stroke-dasharray="7 5"/>`,"в торец"]];
+  return `<g transform="translate(${x} ${y})">`+it.map(([sym,t],i)=>`<g transform="translate(${i*350+20} 0)">${sym}<text x="34" y="10" ${f}>${t}</text></g>`).join("")+`</g>`;
+}
+function detailPages(){
+  const P=PRINT, out=[], rows=36, cols=[[1790,"№","start"],[1990,"X","end"],[2110,"Y","end"],[2185,"Ø","end"],[2270,"Глуб.","end"],[2300,"Где","start"],[2470,"Назначение","start"]];
+  DR.dets.forEach(d=>{
+    for(let s0=0;s0<d.holes.length||s0===0;s0+=rows){
+      const part=d.holes.slice(s0,s0+rows), cont=s0>0;
+      let g=`<text x="160" y="220" font-family="${P.font}" font-size="54" font-weight="700" fill="${P.ink}">Деталь ${d.id?"#"+d.id+" · ":""}${esc(d.title)}${cont?" (продолжение)":""}</text>`;
+      g+=`<text x="160" y="280" font-family="${P.font}" font-size="32" fill="${P.muted}">${fmt(d.w)}×${fmt(d.h)} мм · ${d.qty} шт · ${esc(d.view)} · координаты от точки 0, мм</text>`;
+      g+=nested(detailSVG(d,P),160,320,1560,1420);
+      g+=legendSVG(160,1800,P);
+      if(d.note) g+=`<text x="160" y="1880" font-family="${P.font}" font-size="28" fill="${P.ink}">${esc(d.note)}</text>`;
+      if(!d.holes.length) g+=`<text x="1790" y="400" font-family="${P.font}" font-size="32" fill="${P.muted}">Отверстий нет</text>`;
+      else{
+        g+=cols.map(([x,t,a])=>`<text x="${x}" y="360" text-anchor="${a}" font-family="${P.font}" font-size="26" font-weight="700" fill="${P.muted}">${t}</text>`).join("");
+        g+=`<line x1="1780" y1="376" x2="2820" y2="376" stroke="${P.ink}" stroke-width="4"/>`;
+        part.forEach((o,r)=>{const y=414+r*36, v=[s0+r+1,fmt(o.x),fmt(o.y),o.d,o.dep,o.face==="A"&&d.faces.B?"пласть А":(WHERE[o.face]||o.face),o.what];
+          g+=v.map((val,i)=>`<text x="${cols[i][0]}" y="${y}" text-anchor="${cols[i][2]}" font-family="${i===5||i===6?P.font:P.mono}" font-size="25" fill="${P.ink}">${esc(val)}</text>`).join("");
+          if(r%2===1) g=g+`<rect x="1780" y="${y-26}" width="1040" height="36" fill="#000" fill-opacity=".04"/>`;});
+      }
+      out.push([g,`Присадка: ${d.title}`.slice(0,34)]);
+    }
+  });
+  return out;
+}
+
+/* ---------- assembly instructions ---------- */
+function wrap(str,max){const out=[];let line="";str.split(/\s+/).forEach(w=>{if((line+" "+w).trim().length>max){if(line) out.push(line);line=w;}else line=(line+" "+w).trim();});if(line) out.push(line);return out;}
+function asmParts(){
+  const t=L.t,H=S.H,W=S.W,pl=+S.plinth||0,list=[];
+  const add=(grp,x,y,w,h,kind)=>list.push({grp,x,y,w,h,kind:kind||"rect"});
+  add("sideL",0,0,t,H);add("sideR",W-t,0,t,H);add("top",t,0,W-2*t,t);add("bottom",t,L.yBot,W-2*t,t);
+  if(pl>0) add("plinth",t,H-pl,W-2*t,pl);
+  L.secs.forEach(sc=>{ if(sc.i>0) add("parts",sc.x-t,L.yTop,t,L.hin);
+    sc.shelves.forEach((y,j)=>add((sc.fixed&&sc.fixed[j])||sc.c.kind==="hanger"?"fixed":"loose",sc.x,y,sc.w,t));
+    if(sc.rod) add("rod",sc.x+10,sc.rod-6,sc.w-20,12);
+    sc.doors.forEach(d=>add("doors",d.x,d.y,d.w,d.h,"door"));});
+  if(+S.back) add("back",t,t,W-2*t,L.hin,"back");
+  return list;
+}
+function miniSVG(shown,hl,P){
+  const W=S.W,H=S.H,fs=Math.max(W,H)*.03,pad=fs*1.2, parts=asmParts();
+  let g="";
+  const order=["back","sideL","sideR","top","bottom","plinth","parts","fixed","loose","rod","doors"];
+  order.forEach(grp=>parts.filter(q=>q.grp===grp).forEach(q=>{
+    const on=shown.includes(grp), hot=hl.includes(grp);
+    if(!on){ if(grp!=="doors"&&grp!=="back") g+=`<rect x="${q.x}" y="${q.y}" width="${q.w}" height="${q.h}" fill="none" stroke="#c4c4c4" stroke-width="${fs*.1}" stroke-dasharray="${fs*.25} ${fs*.2}"/>`; return;}
+    const fill=hot?P.accent:grp==="back"?"#dddddd":grp==="doors"?P.door:P.board;
+    const op=grp==="doors"?(hot?.85:.55):1;
+    g+=`<rect x="${q.x}" y="${q.y}" width="${q.w}" height="${q.h}" fill="${fill}" fill-opacity="${op}" stroke="${hot?P.accent:P.edge}" stroke-width="${hot?fs*.55:fs*.16}" stroke-linejoin="round"/>`;
+  }));
+  g+=`<line x1="${-pad}" y1="${H}" x2="${W+pad}" y2="${H}" stroke="${P.ink}" stroke-width="${fs*.1}"/>`;
+  return {vb:[-pad,-pad,W+pad*2,H+pad*2],body:g};
+}
+function asmSteps(){
+  const n=L.secs.length, pl=+S.plinth||0, cnt=DR.count, ld=P_.filter(p=>p.mat==="ldsp").reduce((a,p)=>a+p.qty,0);
+  const confOf=re=>DR.dets.reduce((a,d)=>a+d.qty*d.holes.filter(h=>h.kind==="conf7"&&re.test(h.what)).length,0);
+  const diag=Math.round(Math.hypot(S.W,S.H));
+  const nFixed=L.secs.reduce((a,sc)=>a+sc.shelves.filter((_,j)=>(sc.fixed&&sc.fixed[j])||sc.c.kind==="hanger").length,0);
+  const nLoose=L.secs.reduce((a,sc)=>a+sc.shelves.length,0)-nFixed;
+  const rods=L.secs.filter(sc=>sc.rod);
+  const doorsN=L.secs.reduce((a,sc)=>a+sc.doors.length,0);
+  const st=[];
+  st.push({t:"Проверьте комплект",x:`Разложите детали и сверьте со спецификацией: ${ld} деталей из ЛДСП${+S.back?", задняя стенка ХДФ":""} и фурнитура по списку. Инструмент: дрель-шуруповёрт, конфирматное сверло Ø7 с зенковкой, свёрла Ø5 и Ø3, фреза Форстнера Ø35, шестигранник 4 мм, рулетка, уровень, угольник.`,shown:[],hl:[]});
+  st.push({t:"Присадка деталей",x:`Разметьте и просверлите отверстия по листам «Присадка»: X и Y отсчитываются от точки 0 в нижнем левом углу чертежа. Сквозные Ø7 сверлите с опорой на подложку, чтобы не сколоть ЛДСП. Торцевые Ø5×50 — строго по центру толщины плиты.`,shown:[],hl:[]});
+  st.push({t:"Дно и цоколь",x:`Положите левую боковину на пол внутренней стороной вверх. Прикрутите дно${pl>0?" и цоколь":""} конфирматами через отверстия в боковине (${confOf(/дно|цоколь/)/2|0} шт на боковину). Проверьте угол угольником.`,shown:["sideL","bottom","plinth"],hl:["bottom","plinth"]});
+  st.push({t:"Крышка",x:`Установите крышку и притяните её конфирматами к левой боковине. Передние кромки крышки, дна и боковины должны быть в одной плоскости.`,shown:["sideL","bottom","plinth","top"],hl:["top"]});
+  if(n>1) st.push({t:n>2?"Перегородки":"Перегородка",x:`Вставьте ${n-1===1?"перегородку":`${n-1} перегородки`} между дном и крышкой и прикрутите конфирматами через отверстия в крышке и дне. Проверьте вертикаль и ширины секций по чертежу общего вида.`,shown:["sideL","bottom","plinth","top","parts"],hl:["parts"]});
+  if(nFixed) st.push({t:"Неподвижные полки",x:`Установите ${nFixed} неподвижн${nFixed===1?"ую полку":"ые полки"} (под двери и антресоли) и закрепите конфирматами через боковину и перегородки. Эти полки держат геометрию и служат упором для дверей.`,shown:["sideL","bottom","plinth","top","parts","fixed"],hl:["fixed"]});
+  st.push({t:"Правая боковина",x:`Наденьте правую боковину на торцы дна, крышки${pl>0?", цоколя":""}${nFixed?" и неподвижных полок":""} и затяните все конфирматы.`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR"],hl:["sideR"]});
+  st.push({t:+S.back?"Диагонали и задняя стенка":"Диагонали",x:`Измерьте обе диагонали корпуса — около ${diag} мм, разница не больше 2 мм. ${+S.back?"Выровняв корпус, прибейте ХДФ гвоздями с шагом 100–150 мм по периметру и к перегородкам: стенка фиксирует геометрию.":""}`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR","back"],hl:["back"]});
+  st.push({t:"Установка на место",x:`Поднимите шкаф вертикально${pl>0?", выставьте по уровню регулируемыми опорами":", установите на подпятники и выставьте по уровню"}.${S.H>1600?" Высокий шкаф обязательно закрепите к стене двумя уголками под крышкой.":""}`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR","back"],hl:["plinth"]});
+  if(nLoose||rods.length) st.push({t:rods.length?"Полки и штанга":"Полки",x:`${nLoose?`Вставьте ${cnt.pin} полкодержателей в отверстия Ø5 и уложите ${nLoose} полок. `:""}${rods.length?`Закрепите штангодержатели саморезами (отверстия Ø3 по месту) и установите штангу длиной ${rods.map(sc=>fmt(sc.w-2)).join(", ")} мм.`:""}`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR","back","loose","rod"],hl:["loose","rod"]});
+  if(doorsN) st.push({t:"Двери",x:`Запрессуйте ${cnt.cup} чашек петель в отверстия Ø35 дверей, прикрутите ответные планки к боковинам и перегородкам (ряд 37 мм от переднего края). Навесьте ${doorsN} двер${doorsN===1?"ь":doorsN<5?"и":"ей"}, винтами петель выставьте зазоры ${fmt(+S.doorGap)} мм. Установите ручки.`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR","back","loose","rod","doors"],hl:["doors"]});
+  return st;
+}
+function asmPages(){
+  const P=PRINT, st=asmSteps(), out=[], per=6, cw=(PW-320)/3, rh=735;
+  for(let i=0;i<st.length;i+=per){
+    let g=`<text x="160" y="220" font-family="${P.font}" font-size="60" font-weight="700" fill="${P.ink}">Инструкция по сборке</text>`;
+    st.slice(i,i+per).forEach((s0,k)=>{
+      const x=160+(k%3)*cw, y=270+Math.floor(k/3)*rh, no=i+k+1;
+      g+=`<rect x="${x}" y="${y}" width="${cw-30}" height="${rh-30}" fill="none" stroke="#d0d0d0" stroke-width="3" rx="12"/>`;
+      g+=nested(miniSVG(s0.shown.length?s0.shown:["sideL","sideR","top","bottom","plinth","parts","fixed","loose","rod","back","doors"],s0.hl,P),x+20,y+20,cw-70,330);
+      g+=`<circle cx="${x+50}" cy="${y+400}" r="30" fill="${P.accent}"/><text x="${x+50}" y="${y+412}" text-anchor="middle" font-family="${P.font}" font-size="34" font-weight="700" fill="#fff">${no}</text>`;
+      g+=`<text x="${x+96}" y="${y+412}" font-family="${P.font}" font-size="36" font-weight="700" fill="${P.ink}">${esc(s0.t)}</text>`;
+      wrap(s0.x,50).slice(0,8).forEach((ln,j)=>g+=`<text x="${x+30}" y="${y+470+j*34}" font-family="${P.font}" font-size="28" fill="${P.ink}">${esc(ln)}</text>`);
+    });
+    out.push([g,"Инструкция по сборке"]);
+  }
+  return out;
+}
 async function svgToJpeg(svg){
   const img=new Image();
   img.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
@@ -903,6 +1116,8 @@ function pdfPages(){
   [`Лист ЛДСП: ${S.sheetL}×${S.sheetW}×${S.t} мм`,`Листов: ${PK.sheets.length}`,`Пропил: ${fmt(+S.kerf)} мм, обзол: ${fmt(+S.trim)} мм`,`Текстура: ${S.grain?"учитывается, без поворота":"поворот разрешён"}`,`Кромка ≥1 мм ${S.subtractEdge?"вычтена":"не вычтена"} из распила`].forEach((t,i)=>hw+=`<text x="1700" y="${440+i*62}" font-family="${PRINT.font}" font-size="36" fill="#1a1a1a">${esc(t)}</text>`);
   inners.push([hw,"Фурнитура"]);
   PK.sheets.forEach((sh,i)=>{const v=sheetSVG(sh,i,S,P_,PRINT,{pfx:"p"});inners.push([nested(v,160,160,PW-320,PH-160-360),`Карта раскроя ${i+1}`]);});
+  detailPages().forEach(pg=>inners.push(pg));
+  asmPages().forEach(pg=>inners.push(pg));
   return inners;
 }
 $("bPdf").addEventListener("click",async()=>{
