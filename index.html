@@ -398,7 +398,7 @@ function hardware(s,L,parts,DR){
   out.push(["Конфирмат 7×50",`${confirm} шт`]);
   if(supports) out.push(["Полкодержатель",`${supports} шт`]);
   if(rods.length) out.push(["Штанга Ø25",rods.map(w=>`${fmt(w-2)} мм`).join(", ")],["Штангодержатель",`${rods.length*2} шт`]);
-  if(hinges) out.push(["Петля накладная, 110°",`${hinges} шт`],["Ручка",`${handles} шт`]);
+  if(hinges) out.push(["Петля накладная, 110°",`${hinges} шт`],["Ручка (по выбору, отверстия по месту)",`${handles} шт`]);
   if(+s.back) out.push([`Гвоздь / саморез для ХДФ`,`${Math.ceil(2*((s.H-s.plinth)+s.W)/150)+ (n-1)*Math.ceil((s.H-s.plinth)/200)} шт`]);
   if(s.plinth>0) out.push(["Опора регулируемая",`${n>2?6:4} шт`]); else out.push(["Подпятник",`${n>2?6:4} шт`]);
   if(s.H>1600) out.push(["Крепление к стене (уголок)","2 шт"]);
@@ -417,7 +417,6 @@ const HOLE={
   pin:{d:5,dep:"12",what:"полкодержатель"},
   plate:{d:5,dep:"12",what:"планка петли"},
   cup:{d:35,dep:"12",what:"чашка петли"},
-  handle:{d:5,dep:"скв.",what:"ручка, 128 мм"},
   rod:{d:3,dep:"10",what:"штангодержатель, по месту"}
 };
 function drillModel(s,L,parts){
@@ -482,15 +481,15 @@ function drillModel(s,L,parts){
   }));
   // doors: drawn from the inside, so a left-hinged door (seen from the front) has its cups on the right
   L.secs.forEach(sc=>sc.doors.forEach(d=>{
-    const h=[], xc=d.hinge==="L"?d.w-22.5:22.5, xh=d.hinge==="L"?40:d.w-40;
+    // handle holes are left out on purpose: handles are chosen individually and drilled on site
+    const h=[], xc=d.hinge==="L"?d.w-22.5:22.5;
     hingePos(d.h).forEach(y=>h.push(H_("cup",xc,y,"A")));
-    if(d.h>=300) [d.h/2-64,d.h/2+64].forEach(y=>h.push(H_("handle",xh,y,"A")));
-    else [d.w/2-64,d.w/2+64].forEach(x=>h.push(H_("handle",x,d.h/2,"A")));
     addDet({name:"Дверь",title:`Дверь, петли ${d.hinge==="L"?"слева":"справа"} (вид спереди)`,id:pid("Дверь",d.h,d.w),w:d.w,h:d.h,holes:h,front:"none",view:"вид с внутренней стороны",faces:{A:"внутр. пласть"}});
   }));
   const count={conf:0,pin:0,cup:0,handle:0};
   dets.forEach(d=>d.holes.forEach(h=>{const q=d.qty;
-    if(h.kind==="conf7") count.conf+=q; else if(h.kind==="pin") count.pin+=q*(h.double?2:1); else if(h.kind==="cup") count.cup+=q; else if(h.kind==="handle") count.handle+=q/2;}));
+    if(h.kind==="conf7") count.conf+=q; else if(h.kind==="pin") count.pin+=q*(h.double?2:1); else if(h.kind==="cup") count.cup+=q;}));
+  count.handle=L.secs.reduce((a,sc)=>a+sc.doors.length,0);
   return {dets,count};
 }
 
