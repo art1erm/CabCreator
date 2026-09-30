@@ -1329,7 +1329,7 @@ $("bApp").addEventListener("click",()=>saveFile("CabCreator.html",appHTML()));
    The page never holds the bot token: it posts to a small relay (worker/feedback-worker.js) that calls the Telegram Bot API.
    endpoint — relay URL; bot — bot username for the fallback "open the chat and paste" path. */
 const APP_VERSION="0.1+";
-const FEEDBACK={endpoint:"",bot:""};
+const FEEDBACK={endpoint:"https://cabcreator-feedback.avermokhin.workers.dev/",bot:"cabcreatorbot"};
 let fbKind="bug";
 function fbOpen(){$("fb").hidden=false;$("fbStatus").textContent="";$("fbStatus").className="fb-status";$("fbSend").disabled=false;setTimeout(()=>$("fbMsg").focus(),0);}
 function fbClose(){$("fb").hidden=true;$("bFb").focus();}
