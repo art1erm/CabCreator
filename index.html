@@ -117,6 +117,17 @@ tr.grp td{font-weight:600;background:var(--bg);font-size:12px;text-transform:upp
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:8px;font-size:13px;max-width:calc(100% - 32px);z-index:9}
 .note{font-size:12px;color:var(--muted);margin:8px 0 0}
 input[type=file]{display:none}
+.fb-back{position:fixed;inset:0;background:rgba(10,14,12,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+.fb{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(520px,100%);max-height:calc(100% - 32px);overflow:auto;display:flex;flex-direction:column;gap:12px}
+.fb-head{display:flex;justify-content:space-between;align-items:center}
+.fb-head h2{font:600 16px var(--f-body);margin:0}
+.fb textarea{font:14px/1.45 var(--f-body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;width:100%;resize:vertical;min-height:110px}
+.fb .seg{align-self:flex-start}
+.fb-status{margin:0;font-size:13px;color:var(--muted);min-height:1em}
+.fb-status.err{color:var(--warn)}
+.fb-status a{color:var(--accent)}
+.fb-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 @media (prefers-reduced-motion:no-preference){.sec{transition:background .15s,border-color .15s}}
 </style>
 </head>
@@ -132,6 +143,7 @@ input[type=file]{display:none}
     <label class="btn" for="fOpen">Открыть</label><input id="fOpen" type="file" accept=".json,application/json">
     <button id="bReset" title="Вернуть пример">Сброс</button>
     <button id="bApp" title="Сохранить приложение одним HTML-файлом для работы без интернета и без Claude">Скачать приложение</button>
+    <button id="bFb" title="Сообщить об ошибке или предложить доработку">Сообщить об ошибке</button>
   </div>
 </header>
 
@@ -220,6 +232,20 @@ input[type=file]{display:none}
 </main>
 </div>
 <div id="toast" hidden></div>
+<div id="fb" class="fb-back" hidden>
+  <form id="fbForm" class="fb" role="dialog" aria-modal="true" aria-labelledby="fbTitle" novalidate>
+    <div class="fb-head"><h2 id="fbTitle">Обратная связь</h2><button type="button" class="x" id="fbClose" aria-label="Закрыть">×</button></div>
+    <div class="seg fb-kind" role="radiogroup" aria-label="Тип сообщения">
+      <button type="button" data-kind="bug" aria-pressed="true">Ошибка</button><button type="button" data-kind="idea" aria-pressed="false">Предложение</button>
+    </div>
+    <label class="f">Сообщение<textarea id="fbMsg" rows="6" maxlength="3000" placeholder="Что случилось или что стоит доработать. Для ошибки: что делали, что ожидали, что получилось."></textarea></label>
+    <label class="f">Как с вами связаться (необязательно)<input id="fbContact" type="text" maxlength="120" placeholder="@telegram или e-mail"></label>
+    <label class="chk"><input id="fbProject" type="checkbox" checked>Приложить текущий проект — так проще повторить ошибку</label>
+    <input id="fbWebsite" type="text" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
+    <p class="fb-status" id="fbStatus" role="status"></p>
+    <div class="fb-actions"><button type="button" id="fbCancel">Отмена</button><button type="submit" class="primary" id="fbSend">Отправить</button></div>
+  </form>
+</div>
 
 <script id="app">
 (function(){
@@ -235,7 +261,7 @@ function clone(o){return JSON.parse(JSON.stringify(o))}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 const $=id=>document.getElementById(id);
 /* markup snapshot before first render: used to save the app as one standalone HTML file */
-const PRISTINE=["header.top",".wrap","#toast"].map(q=>document.querySelector(q).outerHTML).join("\n");
+const PRISTINE=["header.top",".wrap","#toast","#fb"].map(q=>document.querySelector(q).outerHTML).join("\n");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=n=>{const r=Math.round(n*10)/10;return (Number.isInteger(r)?String(r):r.toFixed(1)).replace(".",",")};
 const num=(v,d)=>{const n=parseFloat(v);return isFinite(n)?n:d};
@@ -1298,6 +1324,53 @@ function appHTML(){
   return `<!doctype html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n<title>CabCreator</title>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Unbounded:wght@500;700&display=swap">\n<style id="appCss">${css}</style>\n</head>\n<body>\n${PRISTINE}\n<script id="app">${js}<\/script>\n</body>\n</html>\n`;
 }
 $("bApp").addEventListener("click",()=>saveFile("CabCreator.html",appHTML()));
+
+/* ---------- feedback → Telegram ----------
+   The page never holds the bot token: it posts to a small relay (worker/feedback-worker.js) that calls the Telegram Bot API.
+   endpoint — relay URL; bot — bot username for the fallback "open the chat and paste" path. */
+const APP_VERSION="0.1+";
+const FEEDBACK={endpoint:"",bot:""};
+let fbKind="bug";
+function fbOpen(){$("fb").hidden=false;$("fbStatus").textContent="";$("fbStatus").className="fb-status";$("fbSend").disabled=false;setTimeout(()=>$("fbMsg").focus(),0);}
+function fbClose(){$("fb").hidden=true;$("bFb").focus();}
+function fbText(){
+  const kind=fbKind==="bug"?"Ошибка":"Предложение", c=$("fbContact").value.trim();
+  return [`[CabCreator ${APP_VERSION}] ${kind}`,$("fbMsg").value.trim(),c?`Контакт: ${c}`:"",
+    `Проект: ${S.W}×${S.H}×${S.D}, секций ${S.sections.length}, ЛДСП ${S.t}`].filter(Boolean).join("\n");
+}
+function fbFallback(reason){
+  const txt=fbText(), st=$("fbStatus");
+  const copy=()=>navigator.clipboard.writeText(txt).then(()=>true,()=>false);
+  copy().then(ok=>{
+    st.className="fb-status";
+    st.innerHTML=esc(reason)+" "+(ok?"Текст сообщения скопирован. ":"")+(FEEDBACK.bot?`Откройте <a href="https://t.me/${esc(FEEDBACK.bot)}" target="_blank" rel="noopener">@${esc(FEEDBACK.bot)}</a> в Telegram и вставьте его.`:"Отправьте его разработчику в Telegram.");
+    if(!ok){$("fbMsg").select();}
+  });
+}
+$("bFb").addEventListener("click",fbOpen);
+$("fbClose").addEventListener("click",fbClose);
+$("fbCancel").addEventListener("click",fbClose);
+$("fb").addEventListener("click",e=>{if(e.target===$("fb")) fbClose();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("fb").hidden) fbClose();});
+document.querySelectorAll(".fb-kind button").forEach(b=>b.addEventListener("click",()=>{fbKind=b.dataset.kind;
+  document.querySelectorAll(".fb-kind button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));
+  $("fbProject").checked=fbKind==="bug";}));
+$("fbForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const msg=$("fbMsg").value.trim(), st=$("fbStatus");
+  if(msg.length<10){st.className="fb-status err";st.textContent="Опишите подробнее — хотя бы пару слов.";$("fbMsg").focus();return;}
+  if($("fbWebsite").value){fbClose();return;}
+  if(IN_CLAUDE||!FEEDBACK.endpoint){fbFallback(IN_CLAUDE?"Из окна Claude отправить напрямую нельзя.":"Отправка ещё не настроена.");return;}
+  $("fbSend").disabled=true;st.className="fb-status";st.textContent="Отправляю…";
+  try{
+    const body={kind:fbKind,message:msg,contact:$("fbContact").value.trim(),version:APP_VERSION,
+      context:`${S.W}×${S.H}×${S.D} мм, секций ${S.sections.length}, ЛДСП ${S.t}; ${navigator.userAgent.slice(0,140)}; экран ${innerWidth}×${innerHeight}`,
+      project:$("fbProject").checked?JSON.stringify(Object.assign({app:"CabCreator",version:1},S)):""};
+    const r=await fetch(FEEDBACK.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error(String(r.status));
+    $("fbMsg").value="";fbClose();toast(fbKind==="bug"?"Спасибо! Сообщение об ошибке отправлено.":"Спасибо! Предложение отправлено.");
+  }catch(err){$("fbSend").disabled=false;fbFallback("Не удалось отправить.");}
+});
 
 try{matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>render());}catch(e){}
 new MutationObserver(()=>render()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});

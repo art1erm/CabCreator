@@ -1,0 +1,11 @@
+name = "cabcreator-feedback"
+main = "feedback-worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# Restrict who may post, e.g. "https://av0cad01.github.io". "*" allows any site and local files.
+ALLOW_ORIGIN = "*"
+
+# Secrets are set with wrangler, not here:
+#   npx wrangler secret put BOT_TOKEN
+#   npx wrangler secret put CHAT_ID
