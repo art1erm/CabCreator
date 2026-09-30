@@ -142,7 +142,6 @@ input[type=file]{display:none}
     <button id="bSave" title="Сохранить проект в файл">Сохранить</button>
     <label class="btn" for="fOpen">Открыть</label><input id="fOpen" type="file" accept=".json,application/json">
     <button id="bReset" title="Вернуть пример">Сброс</button>
-    <button id="bApp" title="Сохранить приложение одним HTML-файлом для работы без интернета и без Claude">Скачать приложение</button>
     <button id="bFb" title="Сообщить об ошибке или предложить доработку">Сообщить об ошибке</button>
   </div>
 </header>
@@ -260,8 +259,6 @@ try{const raw=localStorage.getItem(KEY); if(raw){const o=JSON.parse(raw); if(o&&
 function clone(o){return JSON.parse(JSON.stringify(o))}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 const $=id=>document.getElementById(id);
-/* markup snapshot before first render: used to save the app as one standalone HTML file */
-const PRISTINE=["header.top",".wrap","#toast","#fb"].map(q=>document.querySelector(q).outerHTML).join("\n");
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt=n=>{const r=Math.round(n*10)/10;return (Number.isInteger(r)?String(r):r.toFixed(1)).replace(".",",")};
 const num=(v,d)=>{const n=parseFloat(v);return isFinite(n)?n:d};
@@ -888,8 +885,8 @@ async function saveFile(filename,data){
   if(!IN_CLAUDE){browserDownload(filename,data);return;}
   await DLready;
   if(!DL){
-    if(typeof data==="string"){try{await navigator.clipboard.writeText(data);toast("Скачивание в этом окне недоступно — содержимое скопировано в буфер обмена.");}catch(e){toast("Скачивание в этом окне недоступно. Скачайте приложение и откройте его в браузере.");}}
-    else toast("Скачивание в этом окне недоступно. Скачайте приложение и откройте его в браузере.");
+    if(typeof data==="string"){try{await navigator.clipboard.writeText(data);toast("Скачивание в этом окне недоступно — содержимое скопировано в буфер обмена.");}catch(e){toast("Скачивание в этом окне недоступно. Откройте index.html из репозитория в обычном браузере.");}}
+    else toast("Скачивание в этом окне недоступно. Откройте index.html из репозитория в обычном браузере.");
     return;
   }
   try{const r=await DL.save({filename,data});if(r&&r.status==="saved") toast(`Файл ${filename} сохранён.`);}
@@ -1319,16 +1316,11 @@ $("bPdf").addEventListener("click",async()=>{
   finally{btn.disabled=false;btn.textContent="PDF чертежей";}
 });
 
-function appHTML(){
-  const css=$("appCss").textContent, js=$("app").textContent;
-  return `<!doctype html>\n<html lang="ru">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n<title>CabCreator</title>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Unbounded:wght@500;700&display=swap">\n<style id="appCss">${css}</style>\n</head>\n<body>\n${PRISTINE}\n<script id="app">${js}<\/script>\n</body>\n</html>\n`;
-}
-$("bApp").addEventListener("click",()=>saveFile("CabCreator.html",appHTML()));
 
 /* ---------- feedback → Telegram ----------
    The page never holds the bot token: it posts to a small relay (worker/feedback-worker.js) that calls the Telegram Bot API.
    endpoint — relay URL; bot — bot username for the fallback "open the chat and paste" path. */
-const APP_VERSION="0.1+";
+const APP_VERSION="0.2";
 const FEEDBACK={endpoint:"https://cabcreator-feedback.avermokhin.workers.dev/",bot:"cabcreatorbot"};
 let fbKind="bug";
 function fbOpen(){$("fb").hidden=false;$("fbStatus").textContent="";$("fbStatus").className="fb-status";$("fbSend").disabled=false;setTimeout(()=>$("fbMsg").focus(),0);}
