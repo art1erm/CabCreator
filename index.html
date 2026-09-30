@@ -299,12 +299,17 @@ function layout(s){
     // doors: each group covers levels from..to (0 = bottom panel, 1..K = shelves bottom-up, K+1 = top panel)
     sc.doors=[];
     const K=sc.shelves.length, g=+s.doorGap, xl=sc.x-(sc.i===0?t:t/2), xr=sc.x+sc.w+(sc.i===n-1?t:t/2), used=[];
-    normDoors(sc.c,K).forEach((dg,gi)=>{
-      let a=lvl(dg.from,K), b=lvl(dg.to,K); if(a>b) [a,b]=[b,a];
+    const groups=normDoors(sc.c,K).map(dg=>{let a=lvl(dg.from,K), b=lvl(dg.to,K); if(a>b) [a,b]=[b,a]; return {dg,a,b};});
+    // zone z lies between level z and z+1; covered when a door spans it
+    const covered=z=>groups.some(q=>q.a<q.b&&q.a<=z&&z<q.b);
+    // a shelf where a door meets an open zone works like the bottom/top panel: full depth, door overlays it flush
+    sc.fixed=sc.shelves.map((_,j)=>{const lv=j+1;return covered(lv-1)!==covered(lv);});
+    groups.forEach(({dg,a,b},gi)=>{
       if(a===b){warns.push(`Секция ${sc.i+1}: у двери ${gi+1} одинаковые начало и конец.`);return;}
       if(used.some(([u,v])=>a<v&&u<b)) warns.push(`Секция ${sc.i+1}: двери ${gi+1} перекрывают другую дверь.`);
       used.push([a,b]);
-      const yb=a===0?yBot+t-g/2:sc.shelves[a-1]+t/2-g/2, yt=b===K+1?g/2:sc.shelves[b-1]+t/2+g/2;
+      const yb=a===0?yBot+t-g/2:covered(a-1)?sc.shelves[a-1]+t/2-g/2:sc.shelves[a-1]+t-g/2;
+      const yt=b===K+1?g/2:covered(b)?sc.shelves[b-1]+t/2+g/2:sc.shelves[b-1]+g/2;
       const kd=+dg.leaves===2?2:1, dw=Math.floor(((xr-xl)-g*kd)/kd*2)/2, dh=Math.floor((yb-yt)*2)/2;
       if(dh<100){warns.push(`Секция ${sc.i+1}: дверь ${gi+1} ниже 100 мм.`);return;}
       for(let j=0;j<kd;j++){const hinge=kd===2?(j===0?"L":"R"):(sc.i<(n-1)/2?"L":(sc.i>(n-1)/2?"R":"L"));
@@ -330,7 +335,11 @@ function computeParts(s,L){
   add("Дно",s.W-2*t,dc,1,[ef,0,0,0]);
   if(s.plinth>0) add("Цоколь",s.W-2*t,s.plinth,1,[ef,0,0,0]);
   add("Перегородка",L.hin,dc,L.secs.length-1,[ef,0,0,0]);
-  L.secs.forEach(sc=>{ if(sc.shelves.length) add("Полка",sc.w,dc-(+s.shelfInset||0),sc.shelves.length,[ef,0,0,0]); });
+  L.secs.forEach(sc=>{
+    const nf=(sc.fixed||[]).filter(Boolean).length, nl=sc.shelves.length-nf;
+    if(nl) add("Полка",sc.w,dc-(+s.shelfInset||0),nl,[ef,0,0,0]);
+    if(nf) add("Полка неподвижная",sc.w,dc,nf,[ef,0,0,0]);
+  });
   L.secs.forEach(sc=>sc.doors.forEach(d=>add("Дверь",d.h,d.w,1,[ed,ed,ed,ed])));
   if(+s.back) add("Задняя стенка",s.H-s.plinth-4,s.W-4,1,[0,0,0,0],"hdf");
   list.sort((a,b)=>(a.mat===b.mat?0:a.mat==="ldsp"?-1:1));
@@ -382,7 +391,8 @@ function hardware(s,L,parts){
   const perJoint=Math.max(2,Math.round(dc/180));
   let confirm=2*2*perJoint+(n-1)*2*perJoint+(s.plinth>0?4:0);
   let supports=0,rods=[],hinges=0,handles=0,doors=0;
-  L.secs.forEach(sc=>{ if(sc.c.kind==="shelves") supports+=4*sc.shelves.length; else if(sc.c.kind==="hanger") confirm+=2*perJoint;
+  L.secs.forEach(sc=>{ const nf=(sc.fixed||[]).filter(Boolean).length;
+    if(sc.c.kind==="shelves"){supports+=4*(sc.shelves.length-nf);confirm+=2*perJoint*nf;} else if(sc.c.kind==="hanger") confirm+=2*perJoint;
     if(sc.rod) rods.push(sc.w);
     sc.doors.forEach(d=>{doors++;handles++;hinges+=d.h<=900?2:d.h<=1600?3:d.h<=2000?4:5;});});
   const edge={};
@@ -504,7 +514,7 @@ function sideSVG(s,L,si,P,o){
     g+=`<rect x="${bk}" y="0" width="${dc}" height="${H}" fill="${P.board}" fill-opacity=".38" stroke="${P.edge}" stroke-width="${sw}"/>`+back;
     g+=C(bk,0,dc,t)+C(bk,L.yBot,dc,t);
     if(s.plinth>0) g+=C(D-t,H-s.plinth,t,s.plinth);
-    sc.shelves.forEach(y=>g+=C(bk,y,sd,t));
+    sc.shelves.forEach((y,j)=>g+=C(bk,y,sc.fixed&&sc.fixed[j]?dc:sd,t));
     if(sc.rod) g+=`<circle cx="${bk+dc/2}" cy="${sc.rod}" r="12.5" fill="${P.bg}" stroke="${P.ink}" stroke-width="${sw*2}"/>`;
     sdoors.forEach(dd=>g+=C(D+1,dd.y,t,dd.h));
     if(sc.shelves.length){
