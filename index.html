@@ -916,6 +916,9 @@ function page(inner,title,pageNo,total){
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PW} ${PH}" width="${PW}" height="${PH}"><rect width="${PW}" height="${PH}" fill="#fff"/>
   <rect x="100" y="100" width="${PW-200}" height="${PH-200}" fill="none" stroke="#1a1a1a" stroke-width="6"/>${inner}${stamp(title,pageNo,total)}</svg>`;
 }
+function pageBare(inner,pageNo,total){
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PW} ${PH}" width="${PW}" height="${PH}"><rect width="${PW}" height="${PH}" fill="#fff"/>${inner}<text x="${PW-100}" y="${PH-70}" text-anchor="end" font-family="Arial, sans-serif" font-size="40" fill="#111">${pageNo}</text></svg>`;
+}
 function nested(v,x,y,w,h){return `<svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="${v.vb.join(" ")}" preserveAspectRatio="xMidYMid meet">${v.body}</svg>`;}
 function tablePages(){
   const P=PRINT, rowsPer=22, out=[], ld=P_;
@@ -996,69 +999,217 @@ function detailPages(){
   return out;
 }
 
-/* ---------- assembly instructions ---------- */
-function wrap(str,max){const out=[];let line="";str.split(/\s+/).forEach(w=>{if((line+" "+w).trim().length>max){if(line) out.push(line);line=w;}else line=(line+" "+w).trim();});if(line) out.push(line);return out;}
-function asmParts(){
-  const t=L.t,H=S.H,W=S.W,pl=+S.plinth||0,list=[];
-  const add=(grp,x,y,w,h,kind)=>list.push({grp,x,y,w,h,kind:kind||"rect"});
-  add("sideL",0,0,t,H);add("sideR",W-t,0,t,H);add("top",t,0,W-2*t,t);add("bottom",t,L.yBot,W-2*t,t);
-  if(pl>0) add("plinth",t,H-pl,W-2*t,pl);
-  L.secs.forEach(sc=>{ if(sc.i>0) add("parts",sc.x-t,L.yTop,t,L.hin);
-    sc.shelves.forEach((y,j)=>add((sc.fixed&&sc.fixed[j])||sc.c.kind==="hanger"?"fixed":"loose",sc.x,y,sc.w,t));
-    if(sc.rod) add("rod",sc.x+10,sc.rod-6,sc.w-20,12);
-    sc.doors.forEach(d=>add("doors",d.x,d.y,d.w,d.h,"door"));});
-  if(+S.back) add("back",t,t,W-2*t,L.hin,"back");
-  return list;
+/* ---------- assembly guide: wordless, pictogram style ----------
+   Isometric line drawings (x → right, y ↑ up, z → toward the viewer), one step per panel,
+   hardware callouts with counts, arrows for motion, ✓/✗ safety pictograms. */
+const ISO_C=Math.cos(Math.PI/6), ISO_S=.5;
+const isoP=(x,y,z)=>[(x-z)*ISO_C,-y+(x+z)*ISO_S];
+function specId(name,len,wid){const R=v=>Math.round(v*2)/2;const p=P_.find(q=>q.name===name&&(len==null||q.len===R(len))&&(wid==null||q.wid===R(wid)));return p?p.id:"";}
+function isoBoxes(){
+  const t=L.t,H=S.H,W=S.W,D=S.D,bk=+S.back||0,dc=D-bk,sd=dc-(+S.shelfInset||0),pl=+S.plinth||0,out=[];
+  const B=(grp,x0,x1,y0,y1,z0,z1,id,fill)=>out.push({grp,x0,x1,y0,y1,z0,z1,id:id||"",fill:fill||"#ffffff"});
+  const yUp=yF=>H-yF; // front-view Y (down from top) → height from floor
+  B("sideL",0,t,0,H,bk,D,specId("Боковина"));B("sideR",W-t,W,0,H,bk,D,specId("Боковина"));
+  B("bottom",t,W-t,pl,pl+t,bk,D,specId("Дно"));B("top",t,W-t,H-t,H,bk,D,specId("Крышка"));
+  if(pl>0) B("plinth",t,W-t,0,pl,D-t,D,specId("Цоколь"));
+  L.secs.forEach(sc=>{
+    if(sc.i>0) B("parts",sc.x-t,sc.x,pl+t,H-t,bk,D,specId("Перегородка"));
+    sc.shelves.forEach((yF,j)=>{const fixed=sc.fixed&&sc.fixed[j], hang=sc.c.kind==="hanger";
+      const y0=yUp(yF+t), dep=fixed?dc:sd;
+      B(fixed||hang?"fixed":"loose",sc.x,sc.x+sc.w,y0,y0+t,bk,bk+dep,specId(fixed?"Полка неподвижная":hang?"Полка антресоли":"Полка",sc.w,dep));});
+    if(sc.rod){const y=yUp(sc.rod), zc=bk+dc/2;B("rod",sc.x,sc.x+sc.w,y-12,y+12,zc-12,zc+12,"");}
+    sc.doors.forEach(d=>B("doors",d.x,d.x+d.w,yUp(d.y+d.h),yUp(d.y),D+1,D+1+t,specId("Дверь",d.h,d.w)));
+  });
+  if(bk) B("back",2,W-2,pl+2,H-2,0,bk,specId("Задняя стенка"),"#f1f1f1");
+  return out;
 }
-function miniSVG(shown,hl,P){
-  const W=S.W,H=S.H,fs=Math.max(W,H)*.03,pad=fs*1.2, parts=asmParts();
+/* draw boxes back to front; o.move = {grp:[dx,dy,dz]} explodes new parts, o.arrows = [[p3,p3],...] */
+function isoSVG(boxes,o){
+  o=o||{};
+  const mv=o.move||{}, bx=boxes.map(b=>{const m=mv[b.grp]||[0,0,0];return Object.assign({},b,{x0:b.x0+m[0],x1:b.x1+m[0],y0:b.y0+m[1],y1:b.y1+m[1],z0:b.z0+m[2],z1:b.z1+m[2],hot:!!mv[b.grp]});});
+  const corners=b=>[[b.x0,b.y0,b.z0],[b.x1,b.y0,b.z0],[b.x0,b.y1,b.z0],[b.x1,b.y1,b.z0],[b.x0,b.y0,b.z1],[b.x1,b.y0,b.z1],[b.x0,b.y1,b.z1],[b.x1,b.y1,b.z1]].map(p=>isoP(...p));
+  const sb=bx.map(b=>{const c=corners(b);return [Math.min(...c.map(p=>p[0])),Math.max(...c.map(p=>p[0])),Math.min(...c.map(p=>p[1])),Math.max(...c.map(p=>p[1]))];});
+  const e=.01, behind=(a,b)=>a.x1<=b.x0+e||a.y1<=b.y0+e||a.z1<=b.z0+e;
+  // topological order among screen-overlapping pairs; fall back to centroid depth
+  const n=bx.length, indeg=Array(n).fill(0), adj=bx.map(()=>[]);
+  for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){
+    const A=sb[i],Bb=sb[j]; if(A[1]<Bb[0]||Bb[1]<A[0]||A[3]<Bb[2]||Bb[3]<A[2]) continue;
+    const ij=behind(bx[i],bx[j]), ji=behind(bx[j],bx[i]);
+    if(ij&&!ji){adj[i].push(j);indeg[j]++;} else if(ji&&!ij){adj[j].push(i);indeg[i]++;}
+  }
+  const key=b=>(b.x0+b.x1)/2+(b.y0+b.y1)/2+(b.z0+b.z1)/2, order=[], used=Array(n).fill(false);
+  for(let k=0;k<n;k++){
+    let pick=-1; for(let i=0;i<n;i++) if(!used[i]&&indeg[i]===0&&(pick<0||key(bx[i])<key(bx[pick]))) pick=i;
+    if(pick<0){for(let i=0;i<n;i++) if(!used[i]&&(pick<0||key(bx[i])<key(bx[pick]))) pick=i;}
+    used[pick]=true;order.push(pick);adj[pick].forEach(j=>indeg[j]--);
+  }
+  const all=sb.flat(), extra=(o.arrows||[]).flat().map(p=>isoP(...p));
+  let x0=Math.min(...sb.map(q=>q[0]),...extra.map(p=>p[0])),x1=Math.max(...sb.map(q=>q[1]),...extra.map(p=>p[0]));
+  let y0=Math.min(...sb.map(q=>q[2]),...extra.map(p=>p[1])),y1=Math.max(...sb.map(q=>q[3]),...extra.map(p=>p[1]));
+  const span=Math.max(x1-x0,y1-y0), pad=span*.06, sw=span*.0028;
+  const poly=pts=>pts.map(p=>isoP(...p).map(v=>v.toFixed(1)).join(",")).join(" ");
   let g="";
-  const order=["back","sideL","sideR","top","bottom","plinth","parts","fixed","loose","rod","doors"];
-  order.forEach(grp=>parts.filter(q=>q.grp===grp).forEach(q=>{
-    const on=shown.includes(grp), hot=hl.includes(grp);
-    if(!on){ if(grp!=="doors"&&grp!=="back") g+=`<rect x="${q.x}" y="${q.y}" width="${q.w}" height="${q.h}" fill="none" stroke="#c4c4c4" stroke-width="${fs*.1}" stroke-dasharray="${fs*.25} ${fs*.2}"/>`; return;}
-    const fill=hot?P.accent:grp==="back"?"#dddddd":grp==="doors"?P.door:P.board;
-    const op=grp==="doors"?(hot?.85:.55):1;
-    g+=`<rect x="${q.x}" y="${q.y}" width="${q.w}" height="${q.h}" fill="${fill}" fill-opacity="${op}" stroke="${hot?P.accent:P.edge}" stroke-width="${hot?fs*.55:fs*.16}" stroke-linejoin="round"/>`;
-  }));
-  g+=`<line x1="${-pad}" y1="${H}" x2="${W+pad}" y2="${H}" stroke="${P.ink}" stroke-width="${fs*.1}"/>`;
-  return {vb:[-pad,-pad,W+pad*2,H+pad*2],body:g};
+  order.forEach(i=>{const b=bx[i], st=`stroke="#111" stroke-width="${b.hot?sw*1.6:sw}" stroke-linejoin="round"`;
+    const f=b.fill, shade=b.fill==="#ffffff"?"#f4f4f4":"#e6e6e6", shade2=b.fill==="#ffffff"?"#ebebeb":"#dcdcdc";
+    g+=`<polygon points="${poly([[b.x0,b.y1,b.z0],[b.x1,b.y1,b.z0],[b.x1,b.y1,b.z1],[b.x0,b.y1,b.z1]])}" fill="${f}" ${st}/>`;
+    g+=`<polygon points="${poly([[b.x0,b.y0,b.z1],[b.x1,b.y0,b.z1],[b.x1,b.y1,b.z1],[b.x0,b.y1,b.z1]])}" fill="${shade}" ${st}/>`;
+    g+=`<polygon points="${poly([[b.x1,b.y0,b.z0],[b.x1,b.y0,b.z1],[b.x1,b.y1,b.z1],[b.x1,b.y1,b.z0]])}" fill="${shade2}" ${st}/>`;
+  });
+  (o.arrows||[]).forEach(([p,q])=>{const A=isoP(...p),Bq=isoP(...q),dx=Bq[0]-A[0],dy=Bq[1]-A[1],L0=Math.hypot(dx,dy)||1,ux=dx/L0,uy=dy/L0,h=span*.035;
+    const bx2=Bq[0]-ux*h, by2=Bq[1]-uy*h;
+    g+=`<line x1="${A[0]}" y1="${A[1]}" x2="${bx2}" y2="${by2}" stroke="#111" stroke-width="${sw*3.2}" stroke-linecap="round"/>`;
+    g+=`<polygon points="${Bq[0]},${Bq[1]} ${bx2-uy*h*.55},${by2+ux*h*.55} ${bx2+uy*h*.55},${by2-ux*h*.55}" fill="#111"/>`;});
+  // circled part numbers on the new parts
+  const seen=new Set();
+  bx.filter(b=>b.hot&&b.id&&o.label!==false).forEach(b=>{if(seen.has(b.grp+b.id)) return;seen.add(b.grp+b.id);
+    const c=isoP((b.x0+b.x1)/2,(b.y0+b.y1)/2,b.z1), r=span*.03;
+    g+=`<circle cx="${c[0]}" cy="${c[1]}" r="${r}" fill="#fff" stroke="#111" stroke-width="${sw*1.2}"/><text x="${c[0]}" y="${c[1]+r*.38}" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="${r*1.05}" fill="#111">${b.id}</text>`;});
+  if(o.after) g+=o.after(isoP,span,sw);
+  return {vb:[x0-pad,y0-pad,x1-x0+pad*2,y1-y0+pad*2],body:g};
+}
+
+/* pictograms, each drawn in a 100×100 box */
+const IC={
+  conf:`<path d="M12 32 L24 40 V60 L12 68 Z" fill="#fff" stroke="#111" stroke-width="3"/><rect x="24" y="43" width="58" height="14" fill="#fff" stroke="#111" stroke-width="3"/><path d="M82 43 L94 50 L82 57" fill="#fff" stroke="#111" stroke-width="3"/>${[32,40,48,56,64,72].map(x=>`<line x1="${x}" y1="43" x2="${x+5}" y2="57" stroke="#111" stroke-width="2"/>`).join("")}`,
+  pin:`<rect x="16" y="43" width="40" height="14" rx="3" fill="#fff" stroke="#111" stroke-width="3"/><rect x="56" y="32" width="8" height="36" fill="#fff" stroke="#111" stroke-width="3"/><path d="M64 36 H86 V64 H64" fill="#fff" stroke="#111" stroke-width="3"/>`,
+  hinge:`<circle cx="30" cy="50" r="19" fill="#fff" stroke="#111" stroke-width="3"/><circle cx="30" cy="50" r="11" fill="none" stroke="#111" stroke-width="2"/><rect x="44" y="41" width="46" height="18" rx="3" fill="#fff" stroke="#111" stroke-width="3"/><circle cx="62" cy="50" r="3" fill="#111"/><circle cx="78" cy="50" r="3" fill="#111"/>`,
+  handle:`<rect x="8" y="30" width="84" height="12" rx="6" fill="#fff" stroke="#111" stroke-width="3"/><rect x="18" y="42" width="9" height="22" fill="#fff" stroke="#111" stroke-width="3"/><rect x="73" y="42" width="9" height="22" fill="#fff" stroke="#111" stroke-width="3"/>`,
+  rod:`<rect x="6" y="43" width="88" height="14" fill="#fff" stroke="#111" stroke-width="3"/><ellipse cx="94" cy="50" rx="3" ry="7" fill="#fff" stroke="#111" stroke-width="2"/>`,
+  holder:`<circle cx="50" cy="50" r="30" fill="#fff" stroke="#111" stroke-width="3"/><circle cx="50" cy="50" r="13" fill="#fff" stroke="#111" stroke-width="3"/>${[0,120,240].map(a=>`<circle cx="${50+22*Math.cos(a*Math.PI/180-Math.PI/2)}" cy="${50+22*Math.sin(a*Math.PI/180-Math.PI/2)}" r="3" fill="#111"/>`).join("")}`,
+  nail:`<rect x="12" y="38" width="5" height="24" fill="#111"/><path d="M17 48 H82 L90 50 L82 52 H17 Z" fill="#fff" stroke="#111" stroke-width="2.5"/>`,
+  foot:`<rect x="28" y="64" width="44" height="16" rx="3" fill="#fff" stroke="#111" stroke-width="3"/><rect x="44" y="18" width="12" height="46" fill="#fff" stroke="#111" stroke-width="3"/>${[24,32,40,48,56].map(y=>`<line x1="44" y1="${y}" x2="56" y2="${y+4}" stroke="#111" stroke-width="2"/>`).join("")}`,
+  bracket:`<path d="M22 18 V78 H82" fill="none" stroke="#111" stroke-width="12" stroke-linejoin="miter"/><path d="M22 18 V78 H82" fill="none" stroke="#fff" stroke-width="6"/><circle cx="22" cy="40" r="3" fill="#111"/><circle cx="60" cy="78" r="3" fill="#111"/>`,
+  screw:`<path d="M20 38 L28 44 V56 L20 62 Z" fill="#fff" stroke="#111" stroke-width="3"/><rect x="28" y="46" width="44" height="8" fill="#fff" stroke="#111" stroke-width="2.5"/><path d="M72 46 L82 50 L72 54" fill="#fff" stroke="#111" stroke-width="2.5"/>${[34,42,50,58,66].map(x=>`<line x1="${x}" y1="46" x2="${x+4}" y2="54" stroke="#111" stroke-width="1.5"/>`).join("")}`,
+  hex:`<path d="M28 16 V72 Q28 82 38 82 H84" fill="none" stroke="#111" stroke-width="11" stroke-linecap="round"/>`,
+  driver:`<rect x="8" y="36" width="40" height="28" rx="10" fill="#fff" stroke="#111" stroke-width="3"/><rect x="48" y="46" width="36" height="8" fill="#fff" stroke="#111" stroke-width="3"/><path d="M84 46 L94 50 L84 54 Z" fill="#111"/>`,
+  hammer:`<rect x="12" y="16" width="50" height="20" rx="3" fill="#fff" stroke="#111" stroke-width="3"/><rect x="31" y="36" width="12" height="54" rx="3" fill="#fff" stroke="#111" stroke-width="3"/>`,
+  level:`<rect x="4" y="36" width="92" height="28" rx="3" fill="#fff" stroke="#111" stroke-width="3"/><rect x="38" y="42" width="24" height="16" rx="8" fill="#fff" stroke="#111" stroke-width="2.5"/><circle cx="50" cy="50" r="4" fill="#111"/>`,
+  tape:`<rect x="10" y="22" width="56" height="56" rx="10" fill="#fff" stroke="#111" stroke-width="3"/><circle cx="38" cy="50" r="12" fill="none" stroke="#111" stroke-width="3"/><rect x="66" y="66" width="28" height="8" fill="#fff" stroke="#111" stroke-width="3"/>`,
+  person:`<circle cx="50" cy="20" r="11" fill="#111"/><path d="M34 38 Q50 30 66 38 L70 70 H60 L58 94 H42 L40 70 H30 Z" fill="#111"/>`
+};
+const icon=(k,x,y,sz)=>`<g transform="translate(${x} ${y}) scale(${sz/100})">${IC[k]}</g>`;
+const markOK=(x,y,r)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" stroke="#111" stroke-width="${r*.14}"/><path d="M${x-r*.45} ${y} L${x-r*.1} ${y+r*.38} L${x+r*.5} ${y-r*.35}" fill="none" stroke="#111" stroke-width="${r*.18}" stroke-linecap="round" stroke-linejoin="round"/>`;
+const markNO=(x,y,r)=>`<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" stroke="#111" stroke-width="${r*.14}"/><path d="M${x-r*.4} ${y-r*.4} L${x+r*.4} ${y+r*.4} M${x+r*.4} ${y-r*.4} L${x-r*.4} ${y+r*.4}" stroke="#111" stroke-width="${r*.18}" stroke-linecap="round"/>`;
+const HWC={conf:"101",pin:"102",hinge:"103",handle:"104",rod:"105",holder:"106",nail:"107",foot:"108",bracket:"109",screw:"110"};
+
+function asmData(){
+  const n=L.secs.length,pl=+S.plinth||0,cnt=DR.count;
+  const confIn=(detRe,whatRe)=>DR.dets.reduce((a,d)=>a+(detRe.test(d.title)?d.qty*d.holes.filter(h=>h.kind==="conf7"&&whatRe.test(h.what)).length:0),0);
+  const rods=L.secs.filter(sc=>sc.rod).length, doorsN=L.secs.reduce((a,sc)=>a+sc.doors.length,0);
+  const nails=+S.back?Math.ceil(2*((S.H-pl)+S.W)/150)+(n-1)*Math.ceil((S.H-pl)/200):0;
+  return {n,pl,rods,doorsN,nails,feet:n>2?6:4,wall:S.H>1600,
+    c:{bottom:confIn(/левая/,/дно|цоколь/),top:confIn(/левая/,/крышка/),parts:confIn(/^(Крышка|Дно)$/,/перегородка/),
+       fixed:confIn(/./,/неподвижная|антресоли/),right:confIn(/правая/,/./),pin:cnt.pin,cup:cnt.cup,handle:cnt.handle}};
 }
 function asmSteps(){
-  const n=L.secs.length, pl=+S.plinth||0, cnt=DR.count, ld=P_.filter(p=>p.mat==="ldsp").reduce((a,p)=>a+p.qty,0);
-  const confOf=re=>DR.dets.reduce((a,d)=>a+d.qty*d.holes.filter(h=>h.kind==="conf7"&&re.test(h.what)).length,0);
-  const diag=Math.round(Math.hypot(S.W,S.H));
-  const nFixed=L.secs.reduce((a,sc)=>a+sc.shelves.filter((_,j)=>(sc.fixed&&sc.fixed[j])||sc.c.kind==="hanger").length,0);
-  const nLoose=L.secs.reduce((a,sc)=>a+sc.shelves.length,0)-nFixed;
-  const rods=L.secs.filter(sc=>sc.rod);
-  const doorsN=L.secs.reduce((a,sc)=>a+sc.doors.length,0);
-  const st=[];
-  st.push({t:"Проверьте комплект",x:`Разложите детали и сверьте со спецификацией: ${ld} деталей из ЛДСП${+S.back?", задняя стенка ХДФ":""} и фурнитура по списку. Инструмент: дрель-шуруповёрт, конфирматное сверло Ø7 с зенковкой, свёрла Ø5 и Ø3, фреза Форстнера Ø35, шестигранник 4 мм, рулетка, уровень, угольник.`,shown:[],hl:[]});
-  st.push({t:"Присадка деталей",x:`Разметьте и просверлите отверстия по листам «Присадка»: X и Y отсчитываются от точки 0 в нижнем левом углу чертежа. Сквозные Ø7 сверлите с опорой на подложку, чтобы не сколоть ЛДСП. Торцевые Ø5×50 — строго по центру толщины плиты.`,shown:[],hl:[]});
-  st.push({t:"Дно и цоколь",x:`Положите левую боковину на пол внутренней стороной вверх. Прикрутите дно${pl>0?" и цоколь":""} конфирматами через отверстия в боковине (${confOf(/дно|цоколь/)/2|0} шт на боковину). Проверьте угол угольником.`,shown:["sideL","bottom","plinth"],hl:["bottom","plinth"]});
-  st.push({t:"Крышка",x:`Установите крышку и притяните её конфирматами к левой боковине. Передние кромки крышки, дна и боковины должны быть в одной плоскости.`,shown:["sideL","bottom","plinth","top"],hl:["top"]});
-  if(n>1) st.push({t:n>2?"Перегородки":"Перегородка",x:`Вставьте ${n-1===1?"перегородку":`${n-1} перегородки`} между дном и крышкой и прикрутите конфирматами через отверстия в крышке и дне. Проверьте вертикаль и ширины секций по чертежу общего вида.`,shown:["sideL","bottom","plinth","top","parts"],hl:["parts"]});
-  if(nFixed) st.push({t:"Неподвижные полки",x:`Установите ${nFixed} неподвижн${nFixed===1?"ую полку":"ые полки"} (под двери и антресоли) и закрепите конфирматами через боковину и перегородки. Эти полки держат геометрию и служат упором для дверей.`,shown:["sideL","bottom","plinth","top","parts","fixed"],hl:["fixed"]});
-  st.push({t:"Правая боковина",x:`Наденьте правую боковину на торцы дна, крышки${pl>0?", цоколя":""}${nFixed?" и неподвижных полок":""} и затяните все конфирматы.`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR"],hl:["sideR"]});
-  st.push({t:+S.back?"Диагонали и задняя стенка":"Диагонали",x:`Измерьте обе диагонали корпуса — около ${diag} мм, разница не больше 2 мм. ${+S.back?"Выровняв корпус, прибейте ХДФ гвоздями с шагом 100–150 мм по периметру и к перегородкам: стенка фиксирует геометрию.":""}`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR","back"],hl:["back"]});
-  st.push({t:"Установка на место",x:`Поднимите шкаф вертикально${pl>0?", выставьте по уровню регулируемыми опорами":", установите на подпятники и выставьте по уровню"}.${S.H>1600?" Высокий шкаф обязательно закрепите к стене двумя уголками под крышкой.":""}`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR","back"],hl:["plinth"]});
-  if(nLoose||rods.length) st.push({t:rods.length?"Полки и штанга":"Полки",x:`${nLoose?`Вставьте ${cnt.pin} полкодержателей в отверстия Ø5 и уложите ${nLoose} полок. `:""}${rods.length?`Закрепите штангодержатели саморезами (отверстия Ø3 по месту) и установите штангу длиной ${rods.map(sc=>fmt(sc.w-2)).join(", ")} мм.`:""}`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR","back","loose","rod"],hl:["loose","rod"]});
-  if(doorsN) st.push({t:"Двери",x:`Запрессуйте ${cnt.cup} чашек петель в отверстия Ø35 дверей, прикрутите ответные планки к боковинам и перегородкам (ряд 37 мм от переднего края). Навесьте ${doorsN} двер${doorsN===1?"ь":doorsN<5?"и":"ей"}, винтами петель выставьте зазоры ${fmt(+S.doorGap)} мм. Установите ручки.`,shown:["sideL","bottom","plinth","top","parts","fixed","sideR","back","loose","rod","doors"],hl:["doors"]});
+  const A=asmData(),W=S.W,H=S.H,D=S.D,st=[],has=g=>isoBoxes().some(b=>b.grp===g);
+  let done=["sideL"];
+  const step=(add,move,hw,arrowFrom,extra)=>{const shown=done.concat(add);st.push({shown,move,hw,arrow:arrowFrom,extra});done=shown;};
+  const cen=g=>{const bs=isoBoxes().filter(b=>b.grp===g);return [(Math.min(...bs.map(b=>b.x0))+Math.max(...bs.map(b=>b.x1)))/2,(Math.min(...bs.map(b=>b.y0))+Math.max(...bs.map(b=>b.y1)))/2,(Math.min(...bs.map(b=>b.z0))+Math.max(...bs.map(b=>b.z1)))/2];};
+  const push=(g,v)=>{const c=cen(g);return [[c[0]+v[0],c[1]+v[1],c[2]+v[2]],[c[0]+v[0]*.25,c[1]+v[1]*.25,c[2]+v[2]*.25]];};
+  const off=Math.max(W,H)*.28;
+  step(["bottom"].concat(A.pl?["plinth"]:[]),{bottom:[off,0,0],plinth:[off,0,0]},[["conf",A.c.bottom]],push("bottom",[off,0,0]));
+  step(["top"],{top:[off,0,0]},[["conf",A.c.top]],push("top",[off,0,0]));
+  if(has("parts")) step(["parts"],{parts:[0,0,off]},[["conf",A.c.parts]],push("parts",[0,0,off]));
+  if(has("fixed")) step(["fixed"],{fixed:[0,0,off]},[["conf",A.c.fixed]],push("fixed",[0,0,off]));
+  step(["sideR"],{sideR:[off,0,0]},[["conf",A.c.right]],push("sideR",[off,0,0]));
+  st.push({kind:"diag",shown:done.slice()});
+  if(has("back")) step(["back"],{back:[0,0,-off]},[["nail",A.nails]],push("back",[0,0,-off]),"hammer");
+  if(A.pl) st.push({kind:"feet",shown:done.slice(),hw:[["foot",A.feet]]});
+  st.push({kind:"lift",shown:done.slice()});
+  if(A.wall) st.push({kind:"wall",shown:done.slice(),hw:[["bracket",2],["screw",4]]});
+  if(has("loose")) step(["loose"],{loose:[0,0,off]},[["pin",A.c.pin]],push("loose",[0,0,off]));
+  if(has("rod")) step(["rod"],{rod:[0,off*.6,0]},[["holder",A.rods*2],["screw",A.rods*6],["rod",A.rods]],push("rod",[0,off*.6,0]));
+  if(has("doors")){
+    step(["doors"],{doors:[0,0,off]},[["hinge",A.c.cup]],push("doors",[0,0,off]));
+    st.push({kind:"gap",shown:done.slice()});
+    st.push({kind:"handle",shown:done.slice(),hw:[["handle",A.c.handle]]});
+  }
+  st.push({kind:"done",shown:done.slice()});
   return st;
 }
+/* one step panel in page coordinates */
+function stepPanel(s0,no,x,y,w,h){
+  const boxes=isoBoxes().filter(b=>s0.shown.includes(b.grp));
+  let g=`<text x="${x}" y="${y+86}" font-family="Arial, sans-serif" font-size="96" font-weight="700" fill="#111">${no}</text>`;
+  // hardware callout, top right
+  const hw=(s0.hw||[]).filter(q=>q[1]>0);
+  if(hw.length){
+    const cw=270, bw=hw.length*cw+20, bx0=x+w-bw;
+    g+=`<rect x="${bx0}" y="${y}" width="${bw}" height="190" rx="18" fill="#fff" stroke="#111" stroke-width="4"/>`;
+    hw.forEach(([k,c],i)=>{const cx=bx0+10+i*cw;g+=icon(k,cx+20,y+14,110)+`<text x="${cx+200}" y="${y+84}" text-anchor="middle" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#111">${c}x</text><text x="${cx+75}" y="${y+170}" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" fill="#111">${HWC[k]}</text>`;});
+  }
+  const top=y+(hw.length?210:120), ah=h-(top-y);
+  let v;
+  if(s0.kind==="diag"){
+    const bw=S.W,bh=S.H,d=Math.round(Math.hypot(bw,bh)), fs=Math.max(bw,bh)*.05;
+    v={vb:[-fs*2,-fs*2,bw+fs*4,bh+fs*4],body:`<rect x="0" y="0" width="${bw}" height="${bh}" fill="#fff" stroke="#111" stroke-width="${fs*.2}"/>`+
+      [[0,0,bw,bh],[bw,0,0,bh]].map(([a,b,c,e])=>{const ang=Math.atan2(e-b,c-a),hl=fs*.9;const tip=(px,py,dir)=>`<polygon points="${px},${py} ${px-dir*hl*Math.cos(ang-.35)},${py-dir*hl*Math.sin(ang-.35)} ${px-dir*hl*Math.cos(ang+.35)},${py-dir*hl*Math.sin(ang+.35)}" fill="#111"/>`;
+        return `<line x1="${a}" y1="${b}" x2="${c}" y2="${e}" stroke="#111" stroke-width="${fs*.14}" stroke-dasharray="${fs*.6} ${fs*.35}"/>`+tip(c,e,1)+tip(a,b,-1);}).join("")+
+      `<rect x="${bw/2-fs*3.2}" y="${bh/2-fs*1.1}" width="${fs*6.4}" height="${fs*2.2}" rx="${fs*.4}" fill="#fff" stroke="#111" stroke-width="${fs*.12}"/><text x="${bw/2}" y="${bh/2+fs*.55}" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="${fs*1.4}" fill="#111">A = B</text>`+
+      `<text x="${bw/2}" y="${bh+fs*1.6}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${fs*1.1}" fill="#111">≈${d} ±2</text>`};
+    g+=icon("tape",x+w-150,y+10,130);
+  } else if(s0.kind==="lift"){
+    v=isoSVG(boxes,{label:false});
+    g+=`<rect x="${x+w-470}" y="${y}" width="470" height="190" rx="18" fill="#fff" stroke="#111" stroke-width="4"/>`+icon("person",x+w-450,y+20,150)+icon("person",x+w-330,y+20,150)+markOK(x+w-90,y+95,55);
+  } else if(s0.kind==="done"){
+    v=isoSVG(boxes,{label:false});g+=markOK(x+w-80,y+70,65);
+  } else {
+    const after=s0.kind==="gap"?(P,span,sw)=>{const d=L.secs.find(sc=>sc.doors.length).doors[0],c=P(d.x+d.w,S.H-d.y-d.h/2,S.D+S.t),r=span*.1;
+        return `<circle cx="${c[0]}" cy="${c[1]}" r="${span*.015}" fill="none" stroke="#111" stroke-width="${sw*1.5}"/><line x1="${c[0]}" y1="${c[1]}" x2="${c[0]+r*1.3}" y2="${c[1]-r*1.1}" stroke="#111" stroke-width="${sw*1.5}"/>`+
+          `<circle cx="${c[0]+r*2}" cy="${c[1]-r*1.6}" r="${r}" fill="#fff" stroke="#111" stroke-width="${sw*2}"/><rect x="${c[0]+r*1.25}" y="${c[1]-r*2.3}" width="${r*.55}" height="${r*1.4}" fill="#eee" stroke="#111" stroke-width="${sw*1.3}"/><rect x="${c[0]+r*2.2}" y="${c[1]-r*2.3}" width="${r*.55}" height="${r*1.4}" fill="#eee" stroke="#111" stroke-width="${sw*1.3}"/>`+
+          `<text x="${c[0]+r*1.98}" y="${c[1]-r*.95}" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="${r*.34}" fill="#111">${fmt(+S.doorGap)}</text><text x="${c[0]+r*1.98}" y="${c[1]-r*.62}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${r*.22}" fill="#111">мм</text>`;}:
+      s0.kind==="wall"?(P,span,sw)=>{const a=P(0,S.H,0),b=P(S.W,S.H,0),w0=P(-40,S.H+span*.12,-10),w1=P(S.W+40,S.H+span*.12,-10),w2=P(S.W+40,-40,-10),w3=P(-40,-40,-10);
+        return `<polygon points="${[w0,w1,w2,w3].map(p=>p.join(",")).join(" ")}" fill="none" stroke="#111" stroke-width="${sw}" stroke-dasharray="${sw*6} ${sw*4}"/>`+[a,b].map((p,i)=>`<g transform="translate(${p[0]+(i?-span*.09:span*.02)} ${p[1]-span*.02}) scale(${span*.0007})">${IC.bracket}</g>`).join("");}:
+      s0.kind==="handle"?(P,span,sw)=>L.secs.flatMap(sc=>sc.doors).map(d=>{const x=d.hinge==="L"?d.x+d.w-40:d.x+40,yc=S.H-d.y-d.h/2,z=S.D+S.t+1;
+        const p=P(x,yc-64,z+30),q=P(x,yc+64,z+30);return `<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="#111" stroke-width="${sw*5}" stroke-linecap="round"/>`;}).join(""):
+      s0.kind==="feet"?(P,span,sw)=>{const pts=[[40,0,S.D-60],[S.W-40,0,S.D-60],[40,0,120],[S.W-40,0,120]];if(A_n()>2) pts.push([S.W/2,0,S.D-60],[S.W/2,0,120]);
+        return pts.map(p=>{const a=P(p[0],-10,p[2]),b=P(p[0],-span*.06,p[2]);return `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#111" stroke-width="${sw*4}"/><rect x="${b[0]-span*.015}" y="${b[1]}" width="${span*.03}" height="${span*.012}" fill="#fff" stroke="#111" stroke-width="${sw}"/>`;}).join("")+
+          (()=>{const c=P(S.W/2,-span*.1,S.D/2);return `<path d="M${c[0]-span*.05} ${c[1]} a${span*.05} ${span*.02} 0 1 0 ${span*.1} 0" fill="none" stroke="#111" stroke-width="${sw*3}"/><polygon points="${c[0]+span*.05},${c[1]} ${c[0]+span*.035},${c[1]-span*.02} ${c[0]+span*.068},${c[1]-span*.015}" fill="#111"/>`;})();}:null;
+    v=isoSVG(boxes,{move:s0.move,arrows:s0.arrow?[s0.arrow]:[],after});
+    if(s0.extra==="hammer") g+=icon("hammer",x+w-(s0.hw?470:150),y+30,130);
+    if(s0.kind==="feet") g+=icon("level",x+w-460,y+50,140);
+  }
+  g+=nested(v,x,top,w,ah);
+  return g;
+}
+const A_n=()=>L.secs.length;
 function asmPages(){
-  const P=PRINT, st=asmSteps(), out=[], per=6, cw=(PW-320)/3, rh=735;
-  for(let i=0;i<st.length;i+=per){
-    let g=`<text x="160" y="220" font-family="${P.font}" font-size="60" font-weight="700" fill="${P.ink}">Инструкция по сборке</text>`;
-    st.slice(i,i+per).forEach((s0,k)=>{
-      const x=160+(k%3)*cw, y=270+Math.floor(k/3)*rh, no=i+k+1;
-      g+=`<rect x="${x}" y="${y}" width="${cw-30}" height="${rh-30}" fill="none" stroke="#d0d0d0" stroke-width="3" rx="12"/>`;
-      g+=nested(miniSVG(s0.shown.length?s0.shown:["sideL","sideR","top","bottom","plinth","parts","fixed","loose","rod","back","doors"],s0.hl,P),x+20,y+20,cw-70,330);
-      g+=`<circle cx="${x+50}" cy="${y+400}" r="30" fill="${P.accent}"/><text x="${x+50}" y="${y+412}" text-anchor="middle" font-family="${P.font}" font-size="34" font-weight="700" fill="#fff">${no}</text>`;
-      g+=`<text x="${x+96}" y="${y+412}" font-family="${P.font}" font-size="36" font-weight="700" fill="${P.ink}">${esc(s0.t)}</text>`;
-      wrap(s0.x,50).slice(0,8).forEach((ln,j)=>g+=`<text x="${x+30}" y="${y+470+j*34}" font-family="${P.font}" font-size="28" fill="${P.ink}">${esc(ln)}</text>`);
-    });
-    out.push([g,"Инструкция по сборке"]);
+  const out=[],st=asmSteps(),M=160;
+  // cover
+  const fin=isoSVG(isoBoxes(),{label:false});
+  let c=`<text x="${M}" y="330" font-family="Arial, sans-serif" font-size="120" font-weight="700" fill="#111">${esc((S.name||"Шкаф").toUpperCase())}</text>`;
+  c+=`<text x="${M}" y="420" font-family="Arial, sans-serif" font-size="46" fill="#111">${S.W} × ${S.H} × ${S.D}</text>`;
+  c+=nested(fin,1350,200,1450,1500);
+  ["hex","driver","hammer","level","tape"].forEach((k,i)=>c+=`<rect x="${M+i*230}" y="1560" width="200" height="200" rx="20" fill="#fff" stroke="#111" stroke-width="4"/>`+icon(k,M+30+i*230,1590,140));
+  out.push([c,"",true]);
+  // safety: people and wall fixing
+  let sf="";
+  const box=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="24" fill="#fff" stroke="#111" stroke-width="5"/>`;
+  sf+=box(M,180,1270,820)+icon("person",M+380,330,420)+markNO(M+1100,300,80);
+  sf+=box(M+1380,180,1270,820)+icon("person",M+1380+230,330,420)+icon("person",M+1380+560,330,420)+markOK(M+1380+1110,300,80);
+  const cab=(x,y,rot)=>`<g transform="translate(${x} ${y}) rotate(${rot})"><rect x="-150" y="-560" width="300" height="560" fill="#fff" stroke="#111" stroke-width="8"/><line x1="0" y1="-560" x2="0" y2="0" stroke="#111" stroke-width="5"/></g>`;
+  sf+=box(M,1060,1270,720)+`<line x1="${M+80}" y1="1700" x2="${M+1190}" y2="1700" stroke="#111" stroke-width="8"/>`+cab(M+640,1700,-18)+`<path d="M${M+860} 1280 q120 40 110 170" fill="none" stroke="#111" stroke-width="12"/><polygon points="${M+970},1470 ${M+940},1420 ${M+1005},1425" fill="#111"/>`+markNO(M+1100,1150,70);
+  sf+=box(M+1380,1060,1270,720)+`<line x1="${M+1380+80}" y1="1700" x2="${M+1380+1190}" y2="1700" stroke="#111" stroke-width="8"/><line x1="${M+1380+470}" y1="1110" x2="${M+1380+470}" y2="1700" stroke="#111" stroke-width="10"/>`+cab(M+1380+640,1700,0)+icon("bracket",M+1380+470,1120,90)+markOK(M+1380+1110,1150,70);
+  out.push([sf,"",true]);
+  // parts inventory
+  let inv="";
+  const ld=P_.filter(p=>p.mat==="ldsp"||p.mat==="hdf"), cols=6, cw=(PW-2*M)/cols, ch=330;
+  ld.forEach((p,i)=>{const x=M+(i%cols)*cw, y=150+Math.floor(i/cols)*ch;
+    const bxv=isoSVG([{grp:"p",x0:0,x1:p.len,y0:0,y1:p.wid,z0:0,z1:p.mat==="hdf"?4:S.t,fill:p.mat==="hdf"?"#f1f1f1":"#ffffff",id:""}],{label:false});
+    inv+=nested(bxv,x+10,y+10,cw-40,200)+`<circle cx="${x+60}" cy="${y+260}" r="38" fill="#fff" stroke="#111" stroke-width="4"/><text x="${x+60}" y="${y+275}" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" font-weight="700" fill="#111">${p.id}</text><text x="${x+130}" y="${y+276}" font-family="Arial, sans-serif" font-size="46" font-weight="700" fill="#111">${p.qty}x</text>`;});
+  const A=asmData(), hwl=[["conf",DR.count.conf],["pin",DR.count.pin],["hinge",DR.count.cup],["handle",DR.count.handle],["rod",A.rods],["holder",A.rods*2],["screw",A.rods*6+(A.wall?4:0)],["nail",A.nails],["foot",A.pl?A.feet:0],["bracket",A.wall?2:0]].filter(q=>q[1]>0);
+  const hy=150+Math.ceil(ld.length/cols)*ch+40;
+  inv+=`<line x1="${M}" y1="${hy-20}" x2="${PW-M}" y2="${hy-20}" stroke="#111" stroke-width="4"/>`;
+  hwl.forEach(([k,n],i)=>{const x=M+(i%5)*((PW-2*M)/5), y=hy+Math.floor(i/5)*300;
+    inv+=`<rect x="${x}" y="${y}" width="${(PW-2*M)/5-40}" height="260" rx="16" fill="#fff" stroke="#111" stroke-width="3"/>`+icon(k,x+20,y+20,170)+`<text x="${x+330}" y="${y+120}" text-anchor="middle" font-family="Arial, sans-serif" font-size="60" font-weight="700" fill="#111">${n}x</text><text x="${x+330}" y="${y+200}" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" fill="#111">${HWC[k]}</text>`;});
+  out.push([inv,"",true]);
+  // steps, two per page
+  const pw=(PW-2*M-80)/2;
+  for(let i=0;i<st.length;i+=2){
+    let g=stepPanel(st[i],i+1,M,150,pw,1760);
+    if(st[i+1]) g+=`<line x1="${PW/2}" y1="170" x2="${PW/2}" y2="1880" stroke="#111" stroke-width="3"/>`+stepPanel(st[i+1],i+2,M+pw+80,150,pw,1760);
+    out.push([g,"",true]);
   }
   return out;
 }
@@ -1127,7 +1278,7 @@ $("bPdf").addEventListener("click",async()=>{
     const inners=pdfPages(), imgs=[];
     for(let i=0;i<inners.length;i++){
       btn.textContent=`PDF: лист ${i+1} из ${inners.length}…`;
-      imgs.push(await svgToJpeg(page(inners[i][0],inners[i][1],i+1,inners.length)));
+      imgs.push(await svgToJpeg(inners[i][2]?pageBare(inners[i][0],i+1,inners.length):page(inners[i][0],inners[i][1],i+1,inners.length)));
     }
     await saveFile(`${slug()}_чертежи.pdf`,buildPDF(imgs));
   }catch(e){toast("Не удалось собрать PDF. Попробуйте SVG и CSV.");}
