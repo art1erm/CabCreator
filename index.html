@@ -74,13 +74,19 @@ main{display:flex;flex-direction:column;gap:18px;min-width:0}
 .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .sec-head h2{margin:0}
 .sec-head .hint{font-size:12px;color:var(--muted)}
-.views{display:grid;gap:14px;align-items:start}
+.views-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+.views{display:grid;gap:14px;align-items:start;min-width:680px}
 .views svg{width:100%;height:auto;max-height:74vh;display:block;min-width:0}
+.seg{display:inline-flex;align-items:center;gap:0;font-size:12px;color:var(--muted)}
+.seg span{margin-right:8px}
+.seg button{border-radius:0;padding:5px 10px;font-size:12px;margin-left:-1px}
+.seg button:first-of-type{border-radius:7px 0 0 7px}
+.seg button:last-of-type{border-radius:0 7px 7px 0}
+.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--panel);position:relative}
 #front{touch-action:manipulation}
 #front .hit{cursor:pointer}
 #front .shelf{cursor:ns-resize;touch-action:none}
 #front.dragging,#front.dragging *{cursor:ns-resize}
-@media (max-width:620px){.views{grid-template-columns:minmax(0,1fr)!important}.views #side{max-width:70%;justify-self:center}}
 .warns{display:flex;flex-direction:column;gap:6px}
 .warn{background:var(--warn-soft);color:var(--warn);border-radius:7px;padding:8px 10px;font-size:13px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
@@ -174,11 +180,16 @@ input[type=file]{display:none}
 
 <main>
   <section class="board">
-    <div class="sec-head"><h2>Вид спереди и разрез</h2><span class="hint">Нажмите на секцию, чтобы выбрать её. Полку можно перетащить</span></div>
-    <div class="views" id="views">
-      <svg id="front" role="img" aria-label="Чертёж шкафа, вид спереди" preserveAspectRatio="xMidYMin meet"></svg>
-      <svg id="side" role="img" aria-label="Разрез выбранной секции, вид сбоку" preserveAspectRatio="xMidYMin meet"></svg>
+    <div class="sec-head"><h2>Вид спереди и сбоку</h2>
+      <div class="seg" id="sideMode" role="group" aria-label="Вид сбоку"><span>Сбоку:</span><button type="button" data-mode="view" aria-pressed="false">Вид слева</button><button type="button" data-mode="cut" aria-pressed="true">Разрез секции</button></div>
     </div>
+    <div class="views-scroll">
+      <div class="views" id="views">
+        <svg id="front" role="img" aria-label="Чертёж шкафа, вид спереди" preserveAspectRatio="xMidYMin meet"></svg>
+        <svg id="side" role="img" aria-label="Вид сбоку" preserveAspectRatio="xMidYMin meet"></svg>
+      </div>
+    </div>
+    <p class="note">Нажмите на секцию, чтобы выбрать её. Полку можно перетащить. На узком экране чертёж прокручивается вбок.</p>
     <div class="warns" id="warns"></div>
   </section>
 
@@ -211,7 +222,7 @@ input[type=file]{display:none}
 "use strict";
 const KEY="cabcreator.v1";
 const DEF={name:"Шкаф в прихожую",W:1800,H:2400,D:600,plinth:80,t:16,back:3,edgeFront:2,edgeDoor:2,
-  shelfInset:20,doorGap:3,subtractEdge:true,showDoors:false,sheetL:2800,sheetW:2070,kerf:4,trim:10,grain:true,
+  shelfInset:20,doorGap:3,subtractEdge:true,showDoors:false,sideMode:"cut",sheetL:2800,sheetW:2070,kerf:4,trim:10,grain:true,
   sections:[{w:"",kind:"hanger",shelves:0,doors:2},{w:"",kind:"shelves",shelves:5,doors:1},{w:"450",kind:"shelves",shelves:4,doors:1}]};
 const KINDS={shelves:"Полки",hanger:"Штанга + антресоль",empty:"Пустая"};
 let S=clone(DEF), sel=0;
@@ -446,37 +457,49 @@ function frontSVG(s,L,P,o){
   return {vb,body:g+d};
 }
 
-/* Side view: section through one bay, looking at the left side panel. Back on the left, fronts on the right; same scale and vertical frame as frontSVG */
+/* Side view, back on the left and fronts on the right; same scale and vertical frame as frontSVG.
+   o.mode "view": outside view from the left (hidden edges dashed); "cut": section through bay si */
 function sideSVG(s,L,si,P,o){
   o=o||{};
+  const cut=o.mode!=="view";
   const sc=L.secs[Math.max(0,Math.min(si,L.secs.length-1))];
   const H=s.H,D=s.D,t=L.t,bk=+s.back||0,dc=D-bk,fs=Math.max(s.W,H)*.022,m=fs*4.2;
-  const hasDoor=sc.doors.length>0, xF=D+(hasDoor?t:0);
+  const door=cut?sc.doors[0]:(L.secs.find(x=>x.doors.length)||{doors:[]}).doors[0];
+  const xF=D+(door?t:0);
   const vb=[-m*.45,-m*1.05,xF+m*1.25,H+m*2.1];
   const pid=`cut${sc.i}${o.pfx||""}`, sw=fs*.07;
   const C=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${P.board}" stroke="${P.edge}" stroke-width="${sw}"/><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#${pid})"/>`;
+  const V=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${P.board}" stroke="${P.edge}" stroke-width="${sw*1.4}"/>`;
+  const hid=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${P.muted}" stroke-width="${sw}" stroke-dasharray="${fs*.45} ${fs*.3}"/>`;
   let g=`<defs><pattern id="${pid}" width="${fs*.55}" height="${fs*.55}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="${fs*.55}" stroke="${P.edge}" stroke-width="${fs*.07}"/></pattern></defs>`;
-  // left side panel seen behind the cut
-  g+=`<rect x="0" y="0" width="${D}" height="${H}" fill="${P.board}" fill-opacity=".38" stroke="${P.edge}" stroke-width="${sw}"/>`;
-  if(bk) g+=`<rect x="0" y="2" width="${bk}" height="${H-s.plinth-4}" fill="${P.ink}" fill-opacity=".55"/>`;
-  g+=C(bk,0,dc,t)+C(bk,L.yBot,dc,t);
-  if(s.plinth>0) g+=C(D-t,H-s.plinth,t,s.plinth);
+  const back=bk?`<rect x="0" y="2" width="${bk}" height="${H-s.plinth-4}" fill="${P.ink}" fill-opacity=".55"/>`:"";
   const sd=dc-(+s.shelfInset||0);
-  sc.shelves.forEach(y=>g+=C(bk,y,sd,t));
-  if(sc.rod) g+=`<circle cx="${bk+dc/2}" cy="${sc.rod}" r="12.5" fill="${P.bg}" stroke="${P.ink}" stroke-width="${sw*2}"/>`;
-  sc.doors.slice(0,1).forEach(d=>g+=C(D+1,d.y,t,d.h));
-  g+=`<line x1="${-m*.2}" y1="${H}" x2="${xF+m*.2}" y2="${H}" stroke="${P.ink}" stroke-width="${sw*1.5}"/>`;
-  // dimensions
   let d=dimH(0,D,-m*.55,0,fmt(D),P,fs);
-  if(sc.shelves.length){
-    d+=dimH(bk,bk+sd,H+m*.55,H,fmt(sd),P,fs,"полка");
-    if(+s.shelfInset>0) d+=`<text x="${(bk+sd+D)/2}" y="${H+m*.55+fs*1.25}" text-anchor="middle" font-size="${fs*.7}" font-family="${P.mono}" fill="${P.muted}">+${fmt(+s.shelfInset)}</text>`;
-  }
-  // gap chain on the front side
   const xc=xF+m*.62;
-  sc.gaps.forEach((gv,j)=>{const lo=j===0?L.yBot:sc.shelves[j-1], hi=lo-gv;d+=dimV(hi,lo,xc,xF+fs*.3,gv>=fs*2.4?fmt(gv):"",P,fs*.85);});
-  if(!sc.gaps.length) d+=dimV(L.yTop,L.yBot,xc,xF+fs*.3,fmt(L.hin),P,fs*.85);
-  d+=`<text x="${xF/2}" y="${H+m*1.75}" text-anchor="middle" font-size="${fs*.8}" font-family="${P.font}" fill="${P.muted}">Разрез · секция ${sc.i+1}</text>`;
+  if(cut){
+    // left side panel seen behind the cut
+    g+=`<rect x="${bk}" y="0" width="${dc}" height="${H}" fill="${P.board}" fill-opacity=".38" stroke="${P.edge}" stroke-width="${sw}"/>`+back;
+    g+=C(bk,0,dc,t)+C(bk,L.yBot,dc,t);
+    if(s.plinth>0) g+=C(D-t,H-s.plinth,t,s.plinth);
+    sc.shelves.forEach(y=>g+=C(bk,y,sd,t));
+    if(sc.rod) g+=`<circle cx="${bk+dc/2}" cy="${sc.rod}" r="12.5" fill="${P.bg}" stroke="${P.ink}" stroke-width="${sw*2}"/>`;
+    if(door) g+=C(D+1,door.y,t,door.h);
+    if(sc.shelves.length){
+      d+=dimH(bk,bk+sd,H+m*.55,H,fmt(sd),P,fs,"полка");
+      if(+s.shelfInset>0) d+=`<text x="${(bk+sd+D)/2}" y="${H+m*.55+fs*1.25}" text-anchor="middle" font-size="${fs*.7}" font-family="${P.mono}" fill="${P.muted}">+${fmt(+s.shelfInset)}</text>`;
+    }
+    sc.gaps.forEach((gv,j)=>{const lo=j===0?L.yBot:sc.shelves[j-1], hi=lo-gv;d+=dimV(hi,lo,xc,xF+fs*.3,gv>=fs*2.4?fmt(gv):"",P,fs*.85);});
+    if(!sc.gaps.length) d+=dimV(L.yTop,L.yBot,xc,xF+fs*.3,fmt(L.hin),P,fs*.85);
+  }else{
+    g+=V(bk,0,dc,H)+back;
+    g+=hid(bk,t,D,t)+hid(bk,L.yBot,D,L.yBot)+hid(bk,L.yBot+t,D,L.yBot+t);
+    if(s.plinth>0) g+=hid(D-t,H-s.plinth,D-t,H);
+    if(door) g+=V(D+1,door.y,t,door.h);
+    d+=dimV(0,H,xc,xF+fs*.3,fmt(H),P,fs*.85);
+    if(bk) d+=dimH(0,bk,H+m*.55,H,"",P,fs,`ХДФ ${fmt(bk)}`)+dimH(bk,D,H+m*.55,H,fmt(dc),P,fs,"боковина");
+  }
+  g+=`<line x1="${-m*.2}" y1="${H}" x2="${xF+m*.2}" y2="${H}" stroke="${P.ink}" stroke-width="${sw*1.5}"/>`;
+  d+=`<text x="${xF/2}" y="${H+m*1.75}" text-anchor="middle" font-size="${fs*.8}" font-family="${P.font}" fill="${P.muted}">${cut?`Разрез · секция ${sc.i+1}`:"Вид слева"}</text>`;
   d+=`<text x="${xF}" y="${-m*.92}" text-anchor="end" font-size="${fs*.7}" font-family="${P.font}" fill="${P.muted}">фасад →</text>`;
   return {vb,body:g+d};
 }
@@ -525,8 +548,9 @@ function render(){
   readTheme();compute();
   const f=frontSVG(S,L,SCREEN,{interactive:true,sel,doors:S.showDoors});
   const fr=$("front"); fr.setAttribute("viewBox",f.vb.join(" ")); fr.innerHTML=f.body;
-  const sv=sideSVG(S,L,sel,SCREEN), sd=$("side"); sd.setAttribute("viewBox",sv.vb.join(" ")); sd.innerHTML=sv.body;
+  const sv=sideSVG(S,L,sel,SCREEN,{mode:S.sideMode}), sd=$("side"); sd.setAttribute("viewBox",sv.vb.join(" ")); sd.innerHTML=sv.body;
   $("views").style.gridTemplateColumns=`minmax(0,${f.vb[2].toFixed(0)}fr) minmax(0,${sv.vb[2].toFixed(0)}fr)`;
+  document.querySelectorAll("#sideMode button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.mode===S.sideMode)));
   const warns=[...L.warns];
   if(PK.over.length) warns.push(`Не помещаются на лист: ${PK.over.map(p=>`#${p.id} ${p.name}`).join(", ")}. Проверьте размер листа или снимите учёт текстуры.`);
   const back=P_.find(p=>p.mat==="hdf"); if(back&&Math.min(back.len,back.wid)>2070) warns.push("Задняя стенка больше листа ХДФ 2800×2070 — её нужно делать из двух частей со стыком на перегородке.");
@@ -631,6 +655,7 @@ $("secs").addEventListener("click",e=>{
 });
 $("bAddSec").addEventListener("click",()=>{if(S.sections.length>=10){toast("Не больше 10 секций.");return;}
   S.sections.push({w:"",kind:"shelves",shelves:4,doors:1,gaps:[]});sel=S.sections.length-1;renderSecs();render();});
+$("sideMode").addEventListener("click",e=>{const b=e.target.closest("button[data-mode]");if(!b||b.dataset.mode===S.sideMode) return;S.sideMode=b.dataset.mode;render();});
 $("front").addEventListener("click",e=>{if(dragMoved){dragMoved=false;return;}const h=e.target.closest(".hit,.shelf");if(h&&+h.dataset.sec!==sel) selectSec(+h.dataset.sec,true);});
 
 /* drag a shelf: moves it between its neighbours, changing the gap below and the gap above */
@@ -801,13 +826,15 @@ function pdfPages(){
   const fv=frontSVG(S,L,PRINT,{doors:false}), fd=frontSVG(S,L,PRINT,{doors:true});
   const any=L.secs.some(sc=>sc.doors.length);
   let p1=`<text x="160" y="230" ${T}>Общий вид${any?" · без дверей и с дверями":""}</text>`;
-  p1+=any?nested(fv,160,280,1300,1480)+nested(fd,1510,280,1300,1480):nested(fv,160,280,2650,1480);
+  const sx=sideSVG(S,L,0,PRINT,{mode:"view",pfx:"v"});
+  p1=p1.replace("</text>"," · вид слева</text>");
+  p1+=any?nested(fv,160,280,1080,1480)+nested(fd,1260,280,1080,1480)+nested(sx,2360,280,450,1480):nested(fv,160,280,2000,1480)+nested(sx,2200,280,600,1480);
   inners.push([p1,"Вид спереди"]);
   // side sections, up to 4 per page
   for(let i=0;i<L.secs.length;i+=4){
     const grp=L.secs.slice(i,i+4), cw=(PW-320)/4;
     let g=`<text x="160" y="230" ${T}>Разрезы по секциям (вид сбоку)</text>`;
-    grp.forEach((sc,k)=>{g+=nested(sideSVG(S,L,sc.i,PRINT),160+k*cw,280,cw-40,1480);});
+    grp.forEach((sc,k)=>{g+=nested(sideSVG(S,L,sc.i,PRINT,{mode:"cut",pfx:"p"}),160+k*cw,280,cw-40,1480);});
     inners.push([g,"Разрезы"]);
   }
   tablePages().forEach(g=>inners.push([g,"Спецификация"]));
